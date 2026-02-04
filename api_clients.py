@@ -178,12 +178,23 @@ class WordPressClient:
         if featured_media:
             data['featured_media'] = featured_media
         
-        resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
-        resp.raise_for_status()
-        post_id = resp.json()['id']
-        post_url = resp.json()['link']
-        logger.info(f"Created post ID: {post_id} at {post_url}")
-        return post_id, post_url
+        try:
+            resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
+            resp.raise_for_status()
+            post_id = resp.json()['id']
+            post_url = resp.json()['link']
+            logger.info(f"Created post ID: {post_id} at {post_url}")
+            return post_id, post_url
+        except requests.exceptions.HTTPError as e:
+            # Log detailed error information
+            logger.error(f"WordPress API Error: {e}")
+            logger.error(f"Status Code: {resp.status_code}")
+            logger.error(f"Response: {resp.text[:500]}")
+            if resp.status_code == 401:
+                logger.error("Authentication failed - check WP_USERNAME and WP_APP_PASSWORD")
+            elif resp.status_code == 403:
+                logger.error("Permission denied - user needs 'publish_posts' capability")
+            raise
 
 def optimize_image(image_data, max_size_mb=2):
     """Optimize image to AVIF format with size limit"""

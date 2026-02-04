@@ -39,9 +39,14 @@ def calculate_article_priority(title, summary):
 def fetch_rss_articles(max_articles=MAX_ARTICLES_PER_RUN):
     """Fetch articles from RSS feeds with priority filtering"""
     articles = []
+    total_fetched = 0
+    total_filtered = 0
+    
     for feed_url in RSS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
+            total_fetched += len(feed.entries)
+            
             for entry in feed.entries:
                 if not is_duplicate(entry.link):
                     title = entry.title
@@ -50,6 +55,8 @@ def fetch_rss_articles(max_articles=MAX_ARTICLES_PER_RUN):
                     
                     # Skip low-priority sports (American football, etc.)
                     if priority < 3:
+                        total_filtered += 1
+                        logger.debug(f"Filtered low priority ({priority}): {title[:50]}")
                         continue
                     
                     articles.append({
@@ -65,7 +72,10 @@ def fetch_rss_articles(max_articles=MAX_ARTICLES_PER_RUN):
     
     # Sort by priority (highest first)
     articles.sort(key=lambda x: x['priority'], reverse=True)
-    logger.info(f"Prioritized {len(articles)} articles (top priority: {articles[0]['priority'] if articles else 0})")
+    
+    logger.info(f"RSS Summary: {total_fetched} total, {total_filtered} filtered, {len(articles)} priority articles")
+    if articles:
+        logger.info(f"Top priority: {articles[0]['priority']} - {articles[0]['title'][:60]}")
     
     return articles[:max_articles]
 
@@ -285,7 +295,7 @@ def process_article(article, serper, cf_client, wp_client):
             logger.info(f"Using RSS summary as fallback (scraping failed or insufficient content)")
             full_content = article['summary']
             if len(full_content) < 100:
-                logger.warning(f"Insufficient content, skipping article")
+                logger.warning(f"Insufficient content ({len(full_content)} chars), skipping: {article['title'][:60]}")
                 return False
         
         # Generate SEO article with betting section

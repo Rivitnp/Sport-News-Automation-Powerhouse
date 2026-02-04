@@ -72,9 +72,9 @@ NEPAL_KEYWORDS = [
     'sports betting Nepal'
 ]
 
-# Betting branding (customize for your site)
-BETTING_BRAND = 'yoursite.com'  # Change to your betting site
-BETTING_DISCLAIMER = '⚠️ <strong>18+ Only</strong> | Gamble Responsibly | <a href="https://yoursite.com" target="_blank" rel="nofollow">yoursite.com</a>'
+# Betting branding (1xbet for Nepal market)
+BETTING_BRAND = '1xbet.com'
+BETTING_DISCLAIMER = '⚠️ <strong>18+ Only</strong> | Gamble Responsibly | <a href="https://1xbet.com" target="_blank" rel="nofollow">1xbet.com</a>'
 
 # Google Analytics & SEO
 GOOGLE_ANALYTICS_ID = None  # Set via env: GA_MEASUREMENT_ID
