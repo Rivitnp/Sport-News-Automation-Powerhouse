@@ -72,8 +72,13 @@ def fetch_rss_articles(max_articles=MAX_ARTICLES_PER_RUN):
 def scrape_article_content(url):
     """Scrape full article content from URL"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/1.0)'}
-        resp = requests.get(url, headers=headers, timeout=15)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://www.google.com/'
+        }
+        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
         resp.raise_for_status()
         
         soup = BeautifulSoup(resp.content, 'lxml')
@@ -87,11 +92,12 @@ def scrape_article_content(url):
         if content:
             paragraphs = content.find_all('p')
             text = '\n\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
-            return text[:3000]  # Limit content length
+            if len(text) > 200:  # Only return if we got substantial content
+                return text[:3000]  # Limit content length
         
         return None
     except Exception as e:
-        logger.error(f"Failed to scrape {url}: {e}")
+        logger.warning(f"Could not scrape {url}: {e}")
         return None
 
 def extract_image_from_url(url):
@@ -273,10 +279,14 @@ def process_article(article, serper, cf_client, wp_client):
         # Add betting-specific keywords
         keywords.extend(['betting Nepal', 'betting tips', 'sports betting'])
         
-        # Scrape full content
+        # Scrape full content (fallback to summary if scraping fails)
         full_content = scrape_article_content(article['link'])
-        if not full_content:
+        if not full_content or len(full_content) < 200:
+            logger.info(f"Using RSS summary as fallback (scraping failed or insufficient content)")
             full_content = article['summary']
+            if len(full_content) < 100:
+                logger.warning(f"Insufficient content, skipping article")
+                return False
         
         # Generate SEO article with betting section
         seo_article = create_seo_article(article['title'], full_content, keywords, article['source'])
