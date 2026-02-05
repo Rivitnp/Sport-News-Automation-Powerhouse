@@ -1,4 +1,4 @@
-name: Nepal Sports News Automation
+name: Sports News Automation
 
 on:
   schedule:
@@ -44,6 +44,7 @@ jobs:
           WP_URL: ${{ secrets.WP_URL }}
           WP_USERNAME: ${{ secrets.WP_USERNAME }}
           WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          BETTING_BRAND: ${{ secrets.BETTING_BRAND }}
           GA_MEASUREMENT_ID: ${{ secrets.GA_MEASUREMENT_ID }}
           DB_PATH: news_cache.db
           PYTHONPATH: ${{ github.workspace }}/src
