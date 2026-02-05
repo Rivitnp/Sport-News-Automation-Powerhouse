@@ -188,7 +188,6 @@ class WordPressClient:
         logger.info(f"Uploaded media ID: {media_id}")
         return media_id
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10))
     def create_post(self, title, content, featured_media=None, categories=None, tags=None, date=None):
         """Create WordPress post with categories, tags, and date"""
         data = {
@@ -203,29 +202,27 @@ class WordPressClient:
         if date:
             data['date'] = date  # ISO 8601 format: 2026-02-05T12:00:00
         
-        try:
-            resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
-            resp.raise_for_status()
-            post_id = resp.json()['id']
-            post_url = resp.json()['link']
-            logger.info(f"Created post ID: {post_id} at {post_url}")
-            return post_id, post_url
-        except requests.exceptions.HTTPError as e:
-            # Log detailed error information
-            logger.error(f"WordPress API Error: {e}")
-            logger.error(f"Status Code: {resp.status_code}")
+        resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
+        
+        # Check for errors
+        if resp.status_code >= 400:
+            error_msg = f"WordPress API returned {resp.status_code}"
+            logger.error(error_msg)
             logger.error(f"Response: {resp.text[:500]}")
+            
             if resp.status_code == 401:
                 logger.error("❌ Authentication failed - check WP_USERNAME and WP_APP_PASSWORD in GitHub Secrets")
             elif resp.status_code == 403:
                 logger.error("❌ Permission denied - user needs 'publish_posts' capability")
             elif resp.status_code == 400:
                 logger.error("❌ Bad request - check post data format (title, content, categories, tags)")
-            raise
-        except Exception as e:
-            logger.error(f"WordPress connection error: {e}")
-            logger.error("Check if WP_URL is correct and REST API is enabled")
-            raise
+            
+            resp.raise_for_status()  # This will raise HTTPError
+        
+        post_id = resp.json()['id']
+        post_url = resp.json()['link']
+        logger.info(f"Created post ID: {post_id} at {post_url}")
+        return post_id, post_url
     
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8))
     def get_categories(self):

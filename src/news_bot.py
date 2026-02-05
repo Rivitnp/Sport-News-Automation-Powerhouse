@@ -2,6 +2,7 @@
 import os, sys, time, feedparser, requests, re
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+from tenacity import RetryError
 from utils import logger, validate_env, init_database, is_duplicate, mark_processed, sanitize_html
 from api_clients import SerperClient, OpenRouterClient, CloudflareClient, WordPressClient, optimize_image
 from apifree_client import APIFreeClient
@@ -768,10 +769,13 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
             
             logger.info(f"Published with betting content: {post_url}")
             return True
+        except RetryError as e:
+            logger.error(f"WordPress API failed after retries: {e}")
+            logger.error("This usually means: authentication failed, permission denied, or REST API is disabled")
+            return False
         except Exception as e:
-            logger.error(f"WordPress API error: {e}")
+            logger.error(f"WordPress error: {e}")
             logger.error(f"Failed to create post: {seo_article['title'][:60]}")
-            logger.error("Check WordPress credentials, REST API access, and user permissions")
             return False
         
     except Exception as e:
