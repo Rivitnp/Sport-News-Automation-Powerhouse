@@ -1,17 +1,18 @@
-"""Configuration for Nepal Sports News Bot"""
+"""Configuration for Sports News Bot"""
 
-# RSS Feeds - Prioritized for Cricket & Football (Nepal/India focus)
-# NOTE: ESPN Cricinfo blocks scraping (403), so prioritize BBC/Guardian/Yahoo
+import os
+
+# RSS Feeds - Prioritized for sports content
 RSS_FEEDS = [
-    # Working feeds (no scraping blocks)
-    'https://www.bbc.co.uk/sport/football/rss.xml',  # BBC Football - excellent extraction
-    'https://www.theguardian.com/sport/rss',         # Guardian Sports - excellent extraction
-    'https://sports.yahoo.com/rss/',                 # Yahoo Sports - good extraction
-    'https://www.skysports.com/rss/12040',           # Sky Sports Football
+    # Working feeds
+    'https://www.bbc.co.uk/sport/football/rss.xml',
+    'https://www.theguardian.com/sport/rss',
+    'https://sports.yahoo.com/rss/',
+    'https://www.skysports.com/rss/12040',
     
-    # ESPN feeds (may block scraping - use as fallback)
-    'https://www.espncricinfo.com/rss/content/story/feeds/0.xml',  # Often blocks (403)
-    'https://www.espn.com/espn/rss/cricket/news',                  # Often blocks (403)
+    # ESPN feeds (may block scraping)
+    'https://www.espncricinfo.com/rss/content/story/feeds/0.xml',
+    'https://www.espn.com/espn/rss/cricket/news',
 ]
 
 # Sport Priority (for filtering)
@@ -69,20 +70,18 @@ MAX_RETRIES = 3
 RETRY_MIN_WAIT = 2
 RETRY_MAX_WAIT = 10
 
-# Keywords for Nepal/India context
-NEPAL_KEYWORDS = [
-    'Nepal cricket betting',
-    'India cricket betting',
-    'betting site Nepal',
+# Keywords for local context
+LOCAL_KEYWORDS = [
+    'cricket betting',
     'football betting tips',
-    'UCL betting odds',
-    'IPL betting predictions',
-    'sports betting Nepal'
+    'betting odds',
+    'betting predictions',
+    'sports betting'
 ]
 
-# Betting branding (1xbet for Nepal market)
-BETTING_BRAND = '1xbet.com'
-BETTING_DISCLAIMER = '⚠️ <strong>18+ Only</strong> | Gamble Responsibly | <a href="https://1xbet.com" target="_blank" rel="nofollow">1xbet.com</a>'
+# Betting branding
+BETTING_BRAND = os.getenv('BETTING_BRAND', 'betting-site.com')
+BETTING_DISCLAIMER = '⚠️ <strong>18+ Only</strong> | Gamble Responsibly'
 
 # Google Analytics & SEO
 GOOGLE_ANALYTICS_ID = None  # Set via env: GA_MEASUREMENT_ID
