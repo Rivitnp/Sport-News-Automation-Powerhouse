@@ -216,9 +216,15 @@ class WordPressClient:
             logger.error(f"Status Code: {resp.status_code}")
             logger.error(f"Response: {resp.text[:500]}")
             if resp.status_code == 401:
-                logger.error("Authentication failed - check WP_USERNAME and WP_APP_PASSWORD")
+                logger.error("❌ Authentication failed - check WP_USERNAME and WP_APP_PASSWORD in GitHub Secrets")
             elif resp.status_code == 403:
-                logger.error("Permission denied - user needs 'publish_posts' capability")
+                logger.error("❌ Permission denied - user needs 'publish_posts' capability")
+            elif resp.status_code == 400:
+                logger.error("❌ Bad request - check post data format (title, content, categories, tags)")
+            raise
+        except Exception as e:
+            logger.error(f"WordPress connection error: {e}")
+            logger.error("Check if WP_URL is correct and REST API is enabled")
             raise
     
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8))

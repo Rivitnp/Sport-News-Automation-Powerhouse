@@ -753,20 +753,26 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
         logger.info(f"Tags: {detected_tags} (IDs: {tag_ids})")
         
         # Publish to WordPress
-        post_id, post_url = wp_client.create_post(
-            title=seo_article['title'],
-            content=final_content,
-            featured_media=media_id,
-            categories=category_ids,
-            tags=tag_ids,
-            date=publish_date
-        )
-        
-        # Mark as processed
-        mark_processed(article['link'], seo_article['title'], post_id)
-        
-        logger.info(f"Published with betting content: {post_url}")
-        return True
+        try:
+            post_id, post_url = wp_client.create_post(
+                title=seo_article['title'],
+                content=final_content,
+                featured_media=media_id,
+                categories=category_ids,
+                tags=tag_ids,
+                date=publish_date
+            )
+            
+            # Mark as processed
+            mark_processed(article['link'], seo_article['title'], post_id)
+            
+            logger.info(f"Published with betting content: {post_url}")
+            return True
+        except Exception as e:
+            logger.error(f"WordPress API error: {e}")
+            logger.error(f"Failed to create post: {seo_article['title'][:60]}")
+            logger.error("Check WordPress credentials, REST API access, and user permissions")
+            return False
         
     except Exception as e:
         logger.error(f"Failed to process article: {e}")
