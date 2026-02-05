@@ -333,7 +333,7 @@ def create_seo_article(title, content, keywords, source, source_url=""):
     
     # ULTRA-SPECIFIC PROMPT FOR CLAUDE 3.5 SONNET
     # Designed to produce natural, engaging, SEO-optimized content with FACT-CHECKING
-    prompt = f"""You are writing a sports news article for 1xBatNepal.com, targeting cricket and football fans in Nepal and India.
+    prompt = f"""You are writing a sports news article targeting cricket and football fans.
 
 SOURCE MATERIAL (Use this as your factual basis):
 Title: {title}
