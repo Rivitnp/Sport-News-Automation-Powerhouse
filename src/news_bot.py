@@ -716,8 +716,12 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
                 seo_filename = seo_filename[:50]  # Limit length
                 seo_filename = f"{seo_filename}.avif"
                 
-                media_id = wp_client.upload_media(optimized, seo_filename)
-                logger.info(f"Uploaded featured image: {seo_filename}")
+                try:
+                    media_id = wp_client.upload_media(optimized, seo_filename)
+                    logger.info(f"Uploaded featured image: {seo_filename}")
+                except Exception as e:
+                    logger.warning(f"Failed to upload image: {e}")
+                    media_id = None
         else:
             logger.warning("Publishing article without image")
         
