@@ -6,7 +6,7 @@ from utils import logger, validate_env, init_database, is_duplicate, mark_proces
 from api_clients import SerperClient, OpenRouterClient, CloudflareClient, WordPressClient, optimize_image
 from apifree_client import APIFreeClient
 from article_extractor import extract_article
-from config import (RSS_FEEDS, MAX_ARTICLES_PER_RUN, ARTICLE_DELAY_SECONDS, NEPAL_KEYWORDS,
+from config import (RSS_FEEDS, MAX_ARTICLES_PER_RUN, ARTICLE_DELAY_SECONDS, LOCAL_KEYWORDS,
                     PRIORITY_SPORTS, BETTING_TRIGGERS, BETTING_BRAND, BETTING_DISCLAIMER,
                     ALLOW_SOURCE_IMAGES)
 
