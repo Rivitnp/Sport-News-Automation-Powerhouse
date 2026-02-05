@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
 Diagnostic script to identify why articles aren't being published
-Run this locally with: python3 diagnose.py
+Run this locally with: python tests/diagnose.py
 """
 
 import os
 import sys
 from dotenv import load_dotenv
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 load_dotenv()
 
@@ -21,13 +24,21 @@ print("-" * 70)
 
 try:
     import feedparser
+    import requests
     from config import RSS_FEEDS, PRIORITY_SPORTS
     
     print(f"Configured RSS feeds: {len(RSS_FEEDS)}")
     
     for feed_url in RSS_FEEDS:
         print(f"\n  Testing: {feed_url}")
-        feed = feedparser.parse(feed_url)
+        try:
+            # Fetch with requests first
+            resp = requests.get(feed_url, timeout=10)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.content)
+        except Exception as e:
+            print(f"    ❌ Failed to fetch: {e}")
+            continue
         
         if not feed.entries:
             print(f"    ❌ No entries found!")

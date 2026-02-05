@@ -1,34 +1,42 @@
 """Configuration for Nepal Sports News Bot"""
 
 # RSS Feeds - Prioritized for Cricket & Football (Nepal/India focus)
+# NOTE: ESPN Cricinfo blocks scraping (403), so prioritize BBC/Guardian/Yahoo
 RSS_FEEDS = [
-    # Cricket (Priority 1)
-    'https://www.espncricinfo.com/rss/content/story/feeds/0.xml',
-    'https://www.cricbuzz.com/rss-feed/cricket-news',
-    'https://sports.ndtv.com/rss/cricket',
+    # Working feeds (no scraping blocks)
+    'https://www.bbc.co.uk/sport/football/rss.xml',  # BBC Football - excellent extraction
+    'https://www.theguardian.com/sport/rss',         # Guardian Sports - excellent extraction
+    'https://sports.yahoo.com/rss/',                 # Yahoo Sports - good extraction
+    'https://www.skysports.com/rss/12040',           # Sky Sports Football
     
-    # Football (Priority 2)
-    'https://www.goal.com/feeds/en/news',
-    'https://www.espn.com/espn/rss/soccer/news',
-    'https://www.bbc.co.uk/sport/football/rss.xml',
-    
-    # General Sports (Lower priority)
-    'https://sports.yahoo.com/rss/',
-    'https://www.theguardian.com/sport/rss',
+    # ESPN feeds (may block scraping - use as fallback)
+    'https://www.espncricinfo.com/rss/content/story/feeds/0.xml',  # Often blocks (403)
+    'https://www.espn.com/espn/rss/cricket/news',                  # Often blocks (403)
 ]
 
 # Sport Priority (for filtering)
+# Cricket: +5 points, Football/Leagues: +3 points, Other sports: +2 points
 PRIORITY_SPORTS = {
-    'cricket': 10,      # Highest priority
-    'football': 9,      # High priority
-    'soccer': 9,        # Same as football
-    'ipl': 10,          # Indian Premier League
-    'ucl': 9,           # UEFA Champions League
-    'premier league': 9,
-    'world cup': 10,
-    'basketball': 3,    # Lower priority
+    'cricket': 5,       # Cricket priority
+    'ipl': 5,           # Indian Premier League
+    't20': 5,           # T20 cricket
+    'test': 5,          # Test cricket
+    'odi': 5,           # ODI cricket
+    'football': 3,      # Football priority
+    'soccer': 3,        # Same as football
+    'ucl': 3,           # UEFA Champions League
+    'champions league': 3,
+    'premier league': 3,
+    'la liga': 3,
+    'serie a': 3,
+    'bundesliga': 3,
+    'basketball': 2,    # Other sports
+    'tennis': 2,
+    'badminton': 2,
+    'hockey': 2,
     'american football': 1,  # Lowest priority
     'nfl': 1,
+    'baseball': 1,
 }
 
 # Betting-related keywords to detect betting opportunities
@@ -38,11 +46,11 @@ BETTING_TRIGGERS = [
     'ucl', 'champions league', 'premier league', 'ipl', 'world cup'
 ]
 
-# Processing limits (Optimized for 10k visitors/month)
-MAX_ARTICLES_PER_RUN = 10  # Increased from 5 to 10
+# Processing limits (Optimized for hourly runs)
+MAX_ARTICLES_PER_RUN = 1  # 1 article per hour = 24 articles/day
 MAX_CONTENT_LENGTH = 3000
 MAX_IMAGE_SIZE_MB = 2
-ARTICLE_DELAY_SECONDS = 3  # Reduced from 5 to 3 for faster processing
+ARTICLE_DELAY_SECONDS = 3  # Delay between articles (not needed for 1 article)
 
 # Image settings
 IMAGE_WIDTH = 1200

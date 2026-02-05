@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 import os, sys, time, feedparser, requests, re
+from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from utils import logger, validate_env, init_database, is_duplicate, mark_processed, sanitize_html
 from api_clients import SerperClient, OpenRouterClient, CloudflareClient, WordPressClient, optimize_image
+from apifree_client import APIFreeClient
+from article_extractor import extract_article
 from config import (RSS_FEEDS, MAX_ARTICLES_PER_RUN, ARTICLE_DELAY_SECONDS, NEPAL_KEYWORDS,
                     PRIORITY_SPORTS, BETTING_TRIGGERS, BETTING_BRAND, BETTING_DISCLAIMER,
                     ALLOW_SOURCE_IMAGES)
+
+# Load environment variables from .env file (for local testing)
+load_dotenv()
 
 def validate_startup():
     """Validate required environment variables"""
@@ -19,16 +25,36 @@ def calculate_article_priority(title, summary):
     text = f"{title} {summary}".lower()
     score = 0
     
-    # Check sport priority
+    # Check sport priority (Cricket: +5, Football: +3, Other: +2)
+    sport_found = False
     for sport, priority in PRIORITY_SPORTS.items():
         if sport in text:
             score += priority
+            sport_found = True
             break
+    
+    # If no specific sport found, check for general sports indicators
+    if not sport_found:
+        # Football team names and leagues
+        football_indicators = ['arsenal', 'chelsea', 'manchester', 'liverpool', 'barcelona', 
+                              'real madrid', 'psg', 'bayern', 'juventus', 'milan',
+                              'premier league', 'la liga', 'serie a', 'bundesliga', 'ligue 1']
+        if any(indicator in text for indicator in football_indicators):
+            score += 3  # Football priority
+            sport_found = True
+        
+        # Cricket team names and tournaments
+        cricket_indicators = ['india', 'pakistan', 'australia', 'england', 'test match',
+                            'odi', 't20', 'ipl', 'bbl', 'psl', 'wicket', 'batting', 'bowling']
+        if any(indicator in text for indicator in cricket_indicators):
+            score += 5  # Cricket priority
+            sport_found = True
     
     # Boost for betting-relevant content
     for trigger in BETTING_TRIGGERS:
         if trigger in text:
             score += 2
+            break
     
     # Boost for Nepal/India mentions
     if 'nepal' in text or 'india' in text:
@@ -44,7 +70,10 @@ def fetch_rss_articles(max_articles=MAX_ARTICLES_PER_RUN):
     
     for feed_url in RSS_FEEDS:
         try:
-            feed = feedparser.parse(feed_url)
+            # Fetch with requests first (feedparser has issues with some feeds)
+            resp = requests.get(feed_url, timeout=15)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.content)
             total_fetched += len(feed.entries)
             
             for entry in feed.entries:
@@ -80,31 +109,103 @@ def fetch_rss_articles(max_articles=MAX_ARTICLES_PER_RUN):
     return articles[:max_articles]
 
 def scrape_article_content(url):
-    """Scrape full article content from URL"""
+    """
+    Scrape full article content from URL with advanced extraction
+    Extracts complete article text for use as source material
+    """
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.google.com/'
+            'Referer': 'https://www.google.com/',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
-        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        
+        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
         resp.raise_for_status()
         
         soup = BeautifulSoup(resp.content, 'lxml')
         
         # Remove unwanted elements
-        for tag in soup(['script', 'style', 'nav', 'footer', 'aside']):
+        for tag in soup(['script', 'style', 'nav', 'footer', 'aside', 'header', 'iframe', 'noscript']):
             tag.decompose()
         
-        # Try to find main content
-        content = soup.find('article') or soup.find('main') or soup.find('div', class_='content')
-        if content:
-            paragraphs = content.find_all('p')
-            text = '\n\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
-            if len(text) > 200:  # Only return if we got substantial content
-                return text[:3000]  # Limit content length
+        # Remove ads and social media widgets
+        for class_name in ['ad', 'advertisement', 'social-share', 'related-articles', 'comments', 'sidebar']:
+            for tag in soup.find_all(class_=lambda x: x and class_name in x.lower()):
+                tag.decompose()
         
+        # Try multiple strategies to find article content
+        article_text = None
+        
+        # Strategy 1: Look for article tag
+        article = soup.find('article')
+        if article:
+            paragraphs = article.find_all('p')
+            article_text = '\n\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 30])
+        
+        # Strategy 2: Look for main content area
+        if not article_text or len(article_text) < 500:
+            main = soup.find('main') or soup.find('div', class_=re.compile(r'(content|article|story|post-body)', re.I))
+            if main:
+                paragraphs = main.find_all('p')
+                article_text = '\n\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 30])
+        
+        # Strategy 3: Look for specific content classes
+        if not article_text or len(article_text) < 500:
+            content_divs = soup.find_all('div', class_=re.compile(r'(article-body|story-body|entry-content|post-content)', re.I))
+            for div in content_divs:
+                paragraphs = div.find_all('p')
+                text = '\n\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 30])
+                if len(text) > len(article_text or ''):
+                    article_text = text
+        
+        # Strategy 4: Find all paragraphs with substantial text
+        if not article_text or len(article_text) < 500:
+            all_paragraphs = soup.find_all('p')
+            # Filter paragraphs that are likely article content (longer paragraphs)
+            content_paragraphs = [p.get_text().strip() for p in all_paragraphs if len(p.get_text().strip()) > 50]
+            if content_paragraphs:
+                article_text = '\n\n'.join(content_paragraphs)
+        
+        # Clean up the text
+        if article_text:
+            # Remove excessive whitespace
+            article_text = re.sub(r'\s+', ' ', article_text)
+            article_text = re.sub(r'\n\s*\n', '\n\n', article_text)
+            
+            # Remove common boilerplate phrases
+            boilerplate = [
+                r'Click here to.*?(?=\n|$)',
+                r'Read more:.*?(?=\n|$)',
+                r'Subscribe to.*?(?=\n|$)',
+                r'Follow us on.*?(?=\n|$)',
+                r'Sign up for.*?(?=\n|$)',
+            ]
+            for pattern in boilerplate:
+                article_text = re.sub(pattern, '', article_text, flags=re.IGNORECASE)
+            
+            article_text = article_text.strip()
+            
+            # Return full article (no length limit - we need complete context)
+            if len(article_text) > 500:
+                logger.info(f"Extracted {len(article_text)} chars of article content")
+                return article_text
+            else:
+                logger.warning(f"Extracted content too short: {len(article_text)} chars")
+                return None
+        
+        logger.warning("Could not extract article content using any strategy")
+        return None
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            logger.warning(f"Access forbidden (403) for {url} - site blocking scraping")
+        else:
+            logger.warning(f"HTTP error scraping {url}: {e}")
         return None
     except Exception as e:
         logger.warning(f"Could not scrape {url}: {e}")
@@ -164,66 +265,316 @@ def detect_betting_context(title, content):
     
     return None
 
-def create_seo_article(title, content, keywords, source):
+def detect_categories_and_tags(title, content):
+    """Detect appropriate categories and generate tags from article"""
+    text = f"{title} {content}".lower()
+    
+    # Category detection (sport-based) - ONLY assign if clearly present
+    categories_map = {
+        'cricket': ['cricket', 'ipl', 't20', 'test', 'odi', 'wicket', 'batting', 'bowling', 'bcci', 'icc'],
+        'football': ['football', 'soccer', 'premier league', 'champions league', 'ucl', 'goal', 'fifa', 'uefa'],
+        'sports betting': ['betting', 'odds', 'prediction', 'tips', 'bookmaker', 'wager'],
+    }
+    
+    detected_categories = []
+    for category, keywords in categories_map.items():
+        # Require at least 2 keyword matches for category assignment (stricter)
+        matches = sum(1 for kw in keywords if kw in text)
+        if matches >= 2:
+            detected_categories.append(category)
+    
+    # Default to 'Sports News' if no specific category (but don't add multiple defaults)
+    if not detected_categories:
+        detected_categories.append('sports news')
+    
+    # Tag generation (extract key entities)
+    tags = []
+    
+    # Team names
+    teams = ['india', 'pakistan', 'australia', 'england', 'south africa', 'new zealand',
+             'liverpool', 'manchester united', 'manchester city', 'chelsea', 'arsenal',
+             'barcelona', 'real madrid', 'bayern munich', 'psg']
+    for team in teams:
+        if team in text:
+            tags.append(team.title())
+    
+    # Tournaments
+    tournaments = ['world cup', 'ipl', 't20', 'premier league', 'champions league', 'ucl']
+    for tournament in tournaments:
+        if tournament in text:
+            tags.append(tournament.upper() if tournament in ['ipl', 'ucl', 't20'] else tournament.title())
+    
+    # Player names (common ones)
+    players = ['kohli', 'rohit', 'bumrah', 'dhoni', 'babar', 'miller', 'salah', 'haaland', 'mbappe', 'ronaldo', 'messi']
+    for player in players:
+        if player in text:
+            tags.append(player.title())
+    
+    # Add location tags
+    if 'nepal' in text:
+        tags.append('Nepal')
+    if 'india' in text:
+        tags.append('India')
+    
+    # Limit to 8 tags max
+    tags = list(set(tags))[:8]
+    
+    return detected_categories, tags
+
+def create_seo_article(title, content, keywords, source, source_url=""):
     """Generate SEO-optimized article with betting section for Nepal/India audience"""
     
     # Detect betting context
     betting_context = detect_betting_context(title, content)
     
-    prompt = f"""Rewrite this sports news article for Nepal and India audience with SEO optimization and sports betting focus:
+    # Get current date for context
+    from datetime import datetime
+    current_date = datetime.utcnow().strftime('%B %d, %Y')
+    
+    # ULTRA-SPECIFIC PROMPT FOR CLAUDE 3.5 SONNET
+    # Designed to produce natural, engaging, SEO-optimized content with FACT-CHECKING
+    prompt = f"""You are writing a sports news article for 1xBatNepal.com, targeting cricket and football fans in Nepal and India.
 
-Original Title: {title}
+SOURCE MATERIAL (Use this as your factual basis):
+Title: {title}
+Full Article Content: {content[:3000]}
 Source: {source}
-Content: {content[:1500]}
+Source URL: {source_url}
+Keywords: {', '.join(keywords[:5]) if keywords else 'cricket, football, sports betting'}
+Current Date: {current_date}
 
-Trending Keywords: {', '.join(keywords[:5])}
+YOUR TASK:
+Rewrite this article with your own unique angle, focusing on Nepal/India audience and adding betting insights. Use ALL facts from the source material but present them in an engaging, original way.
+
+🎯 REWRITING APPROACH:
+- Use ALL factual information from source (scores, names, dates, quotes, statistics)
+- Rewrite in your own words with fresh perspective
+- Add Nepal/India local angle and context
+- Integrate betting insights naturally
+- Maintain journalistic integrity - cite source for key facts
+- Create original analysis and commentary
+
+🚨 MANDATORY FACT-CHECKING REQUIREMENTS:
+1. VERIFY TOURNAMENT NAMES: Check if it's "T20 World Cup", "ODI World Cup", "Champions Trophy", etc. - use EXACT name from source
+2. VERIFY TEAM RELATIONSHIPS: If story is "Team A boycotts Team B match in solidarity with Team C", make this crystal clear in title and content
+3. VERIFY QUOTES: Only use quotes if they appear in the source material with attribution. NO fabricated quotes.
+4. VERIFY QUOTE CONTEXT: If a quote has cultural/political context (memes, elections, viral moments), EITHER omit it OR explain the context. Never present quotes as if the speaker is talking about the current topic when they were talking about something else.
+5. VERIFY DATES/EVENTS: Only reference events mentioned in source material. NO speculation about future events without source confirmation.
+6. VERIFY TOURNAMENT DETAILS: Include host countries, start AND end dates (clarify which is final), venue cities for major matches
+7. ADD CONTEXT: If story requires background (e.g., why something happened), add a "Background" section with facts from source
+8. SOURCE CITATIONS: Include source name and ideally URL for key facts
+9. VERIFY STATISTICS: If using specific stats (e.g., "21 T20 internationals in January produced X runs"), cite the source or soften the language if unverifiable
+
+🚨 QUOTE VERIFICATION CRITICAL:
+- If quote is a meme, viral moment, or political reference (e.g., "Brenda from Bristol"), DO NOT use it unless you explain the context
+- Example BAD: "Not another one." – Brenda from Bristol (misleading - this is a 2017 UK election meme, not a cricket quote)
+- Example GOOD: Either omit the quote OR add context: "As the cricket columnist noted, some fans echo the sentiment of the famous 'Brenda from Bristol' reaction to frequent elections"
+- When in doubt about quote context, OMIT THE QUOTE
 
 CRITICAL REQUIREMENTS:
-1. Create engaging title (50-60 chars) - Focus on Cricket/Football (NOT American sports)
-2. Write 800-1200 word article in professional tone
-3. Include keywords naturally: {', '.join(keywords[:3])}
-4. Target audience: Nepal and India sports betting enthusiasts
 
-5. **MANDATORY BETTING SECTION** (if relevant):
-   - Add dedicated paragraph about betting tips/odds
-   - Context: {betting_context or 'sports betting opportunities'}
-   - Include specific betting predictions or odds analysis
-   - Mention {BETTING_BRAND} naturally in context
-   - End with: {BETTING_DISCLAIMER}
-   
-6. Use HTML formatting: <h2>, <p>, <strong>, <ul>, <blockquote>
-7. Include meta description (150-160 chars) with betting keywords
-8. Make it unique and plagiarism-free
-9. Add internal linking opportunities for betting-related terms
+1. TITLE (50-60 characters):
+   - MUST accurately reflect the story (no misleading phrasing)
+   - Start with the primary keyword (team name, tournament, or sport)
+   - Use EXACT tournament name from source (T20 World Cup 2026, not just "World Cup")
+   - Make it compelling but not clickbait
+   - Example: "India vs Pakistan T20: Kohli's 89 Seals Victory"
+   - BAD Example: "Pakistan PM Backs Bangladesh Boycott" (confusing - who is boycotting whom?)
+   - GOOD Example: "Pakistan PM Backs India Match Boycott in Solidarity with Bangladesh"
 
-Format:
-TITLE: [new title with Nepal/India context]
-META: [meta description with betting keywords]
-CONTENT: [full HTML article with betting section]
+2. META DESCRIPTION (150-160 characters):
+   - Include primary keyword + secondary keyword
+   - Add a call to action
+   - Must match article content accurately
+   - Example: "India defeats Pakistan by 6 wickets in T20 World Cup thriller. Kohli's masterclass and Bumrah's spell seal the win. Read full match analysis and betting insights."
 
-Example betting section format:
-<h2>Betting Tips and Predictions</h2>
-<p>[Analysis of betting opportunities for this match/event]</p>
-<p>For the latest odds and betting options, visit <a href="https://{BETTING_BRAND}" target="_blank" rel="nofollow">{BETTING_BRAND}</a>.</p>
-<p><em>{BETTING_DISCLAIMER}</em></p>"""
+3. ARTICLE STRUCTURE (MINIMUM 800 words - STRICT REQUIREMENT):
+
+PUBLISH DATE (at very top):
+<p><em>Published: {current_date}</em></p>
+
+OPENING (100-150 words):
+- Start with a hook: surprising stat, dramatic moment, or key question
+- Answer: Who won? What happened? When? Where?
+- Include primary keyword in first sentence
+- Add local context (Nepal/India viewing angle)
+- For tournaments: Include host countries, precise dates (start date to final date), venue cities
+- Example: "The T20 World Cup 2026, co-hosted by India and Sri Lanka from February 7 to March 8..."
+- ONLY use facts from source material
+
+<h2>Background</h2> (IF STORY REQUIRES CONTEXT - 100-150 words):
+- Add this section ONLY if story needs explanation (e.g., political boycott, controversy, rule change)
+- Explain: Why did this happen? What led to this situation?
+- Use facts from source material only
+- Example: "Bangladesh was excluded from T20 World Cup 2026 after refusing to travel to India citing security concerns. The ICC Board voted 14-2 to replace them with Scotland."
+
+<h2>Match Summary</h2> OR <h2>Story Details</h2> (150-200 words):
+- For match reports: Final score with specific details, key moments with timestamps
+- For news stories: Core facts, official statements, key developments
+- Venue, date, key participants
+- Story-deciding factors
+- ONLY use verifiable information from source
+
+<h2>Key Moments That Decided the Match</h2>:
+<ul>
+<li><strong>[Time/Over]:</strong> [Specific event with player names and impact]</li>
+<li><strong>[Time/Over]:</strong> [Another crucial moment]</li>
+<li><strong>[Time/Over]:</strong> [Third key moment]</li>
+</ul>
+
+<h2>Team Analysis</h2>:
+<h3>[Winning Team]</h3> (100-150 words):
+- Performance stats (possession %, strike rate, etc.)
+- What worked well
+- Key players' contributions
+
+<h3>[Losing Team]</h3> (100-150 words):
+- Where they fell short
+- Missed opportunities
+- Individual performances
+
+<h2>Star Performers</h2>:
+<ul>
+<li><strong>[Player 1]:</strong> [Stats and impact - 2-3 sentences]</li>
+<li><strong>[Player 2]:</strong> [Stats and impact - 2-3 sentences]</li>
+<li><strong>[Player 3]:</strong> [Stats and impact - 2-3 sentences]</li>
+</ul>
+
+<h2>What This Means for [Tournament/League]</h2> (100-150 words):
+- Standings implications
+- Qualification scenarios
+- Upcoming fixtures
+- Local angle for Nepal/India fans
+
+<h2>Expert Analysis</h2> (100-150 words):
+- Tactical breakdown
+- What worked/didn't work
+- Predictions for next matches
+- ONLY include quotes if they appear in source material with proper attribution
+
+<blockquote>
+<p>"[ONLY add quote if it appears in source material with attribution. Format: Quote text - Speaker Name, Source Name]"</p>
+<p><em>Source: [Source Name + URL if available]</em></p>
+</blockquote>
+
+🚨 QUOTE RULES:
+- NO quotes unless they appear in source material
+- MUST include attribution: Speaker name + Source
+- MUST include source citation below quote
+- If no quotes in source, skip the blockquote entirely
+
+<h2>Betting Insights and Odds</h2> (100-150 words):
+- Pre-match odds and how they played out
+- Betting trends
+- Mention: "For live odds and expert betting tips, visit <a href="https://{BETTING_BRAND}" target="_blank" rel="nofollow">{BETTING_BRAND}</a>"
+- Add: "<em>{BETTING_DISCLAIMER}</em>"
+
+<h2>What's Next?</h2> (80-100 words):
+- Upcoming fixtures with dates/times in IST (ONLY if mentioned in source)
+- What to watch for
+- Viewing information for Nepal/India (broadcast channels, streaming)
+- Travel info if relevant (e.g., "Sri Lankan venues are easily accessible for Nepal/India fans")
+- India vs Pakistan fixtures if applicable (always trending!)
+- NO placeholder text like "[Next scheduled matches pending ICC review]"
+- If no specific fixtures mentioned in source, write: "Stay tuned for official announcements on upcoming fixtures."
+
+CLOSING:
+<p><strong>What did you think of this [match/story]? Share your thoughts in the comments below!</strong></p>
+
+4. WRITING STYLE:
+   - Use active voice: "India won" NOT "The match was won by India"
+   - Short paragraphs: 3-4 sentences maximum
+   - Conversational but professional tone
+   - NO robotic phrases like "delve into", "in conclusion", "it's worth noting", "in the realm of"
+   - Include specific numbers, names, times throughout
+   - Natural keyword integration (don't force keywords)
+   - FACT-CHECK: Every claim must be traceable to source material
+
+5. SEO OPTIMIZATION:
+   - Primary keyword in first 100 words
+   - Use 6-12 secondary keywords naturally (cricket, India, Pakistan, World Cup, betting, odds, IST, streaming, etc.)
+   - Include local keywords: "Nepal", "India", "IST time", "live streaming"
+   - Add specific facts: scores, minutes/overs, player stats, possession %, head-to-head records
+   - ONLY use facts from source material
+
+6. GOOGLE DISCOVER ELIGIBILITY:
+   - Story-driven narrative, not just stats
+   - Original analysis and insights
+   - No clickbait - title must match content EXACTLY
+   - Include proper quotes with attribution (only if in source)
+   - NO misleading headlines or images
+
+7. AI SEARCH OPTIMIZATION (Gemini, Grok, Perplexity, ChatGPT):
+   - Direct answers to questions: "Who won?", "What was the score?", "When is the next match?"
+   - Clear H2/H3 hierarchy
+   - Fact-dense content with timelines and statistics
+   - Source-backed claims with citations
+
+8. RESPONSIBLE BETTING:
+   - NO guarantees or promises
+   - Include risk warnings
+   - Mention {BETTING_BRAND} naturally in betting section
+   - Always add disclaimer: {BETTING_DISCLAIMER}
+
+OUTPUT FORMAT:
+Return your response in this exact format:
+
+TITLE: [Your 50-60 char title - MUST accurately reflect story]
+
+META: [Your 150-160 char meta description]
+
+CONTENT:
+[Your complete HTML article starting with publish date, then opening paragraph]
+
+CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
+- MINIMUM 800 words (strict requirement)
+- NO copyright text or "© 2023" anywhere
+- NO hallucinated facts - ONLY use verifiable information from source
+- NO fabricated quotes - ONLY quotes that appear in source with attribution
+- NO misleading quote context - verify quotes aren't memes/political references used out of context
+- NO clickbait - title must accurately reflect content
+- NO betting guarantees or promises
+- NO placeholder text in published content
+- Include specific statistics and data points throughout
+- Make it engaging and natural - should pass the "read aloud" test
+- VERIFY tournament names (T20 World Cup vs ODI World Cup vs Champions Trophy)
+- VERIFY team relationships (who is playing/boycotting whom)
+- VERIFY tournament details (host countries, start date, end date/final date, venue cities)
+- VERIFY quote context (no memes or political quotes without proper context)
+- ADD visible publish date at top of article
+- ADD source citations for key facts
+- ADD host country info for tournaments
+- ADD precise dates (start to final, not just "begins on X")"""
 
     or_client = OpenRouterClient()
-    response = or_client.generate(prompt, max_tokens=2500)
+    response = or_client.generate(prompt, max_tokens=5000)
     
-    # Parse response
+    # Parse response - remove formatting labels
     lines = response.split('\n')
     new_title = title
     meta_desc = ""
     html_content = response
     
     for i, line in enumerate(lines):
-        if line.startswith('TITLE:'):
-            new_title = line.replace('TITLE:', '').strip()
-        elif line.startswith('META:'):
-            meta_desc = line.replace('META:', '').strip()
-        elif line.startswith('CONTENT:'):
+        # Handle both "TITLE:" and "**TITLE:**" formats
+        line_stripped = line.strip()
+        if line_stripped.startswith('TITLE:') or line_stripped.startswith('**TITLE:'):
+            new_title = re.sub(r'\*\*TITLE:\*\*|\*\*TITLE:|\bTITLE:\s*', '', line).strip()
+            # Remove any remaining asterisks
+            new_title = new_title.replace('**', '').strip()
+        elif line_stripped.startswith('META:') or line_stripped.startswith('**META:'):
+            meta_desc = re.sub(r'\*\*META:\*\*|\*\*META:|\bMETA:\s*', '', line).strip()
+            # Remove any remaining asterisks
+            meta_desc = meta_desc.replace('**', '').strip()
+        elif line_stripped.startswith('CONTENT:') or line_stripped.startswith('**CONTENT:'):
             html_content = '\n'.join(lines[i+1:])
             break
+    
+    # Remove any remaining markdown formatting from content
+    html_content = re.sub(r'\*\*CONTENT:\*\*', '', html_content)
+    html_content = re.sub(r'\*\*Title:\*\*.*?\n', '', html_content)
+    html_content = re.sub(r'\*\*Meta:\*\*.*?\n', '', html_content)
+    html_content = html_content.strip()
     
     # Ensure betting disclaimer is present if betting context detected
     if betting_context and BETTING_BRAND not in html_content:
@@ -277,7 +628,7 @@ def add_analytics_tracking(content, post_url):
     
     return analytics_code + content
 
-def process_article(article, serper, cf_client, wp_client):
+def process_article(article, serper, apifree_client, cf_client, wp_client):
     """Process single article: scrape, rewrite, publish with betting focus"""
     try:
         logger.info(f"Processing (Priority {article['priority']}): {article['title']}")
@@ -289,50 +640,122 @@ def process_article(article, serper, cf_client, wp_client):
         # Add betting-specific keywords
         keywords.extend(['betting Nepal', 'betting tips', 'sports betting'])
         
-        # Scrape full content (fallback to summary if scraping fails)
-        full_content = scrape_article_content(article['link'])
-        if not full_content or len(full_content) < 200:
-            logger.info(f"Using RSS summary as fallback (scraping failed or insufficient content)")
+        # Extract full article using professional extraction libraries
+        logger.info("Extracting full article content...")
+        full_content = extract_article(article['link'])
+        
+        if full_content and len(full_content) >= 500:
+            logger.info(f"✅ Successfully extracted full article: {len(full_content)} chars")
+            logger.info("Using full article as source material for factual rewrite")
+        elif full_content and len(full_content) >= 300:
+            logger.info(f"⚠️ Extracted partial content: {len(full_content)} chars (acceptable)")
+        else:
+            logger.info(f"❌ Extraction failed or insufficient content, using RSS summary as fallback")
             full_content = article['summary']
-            if len(full_content) < 100:
-                logger.warning(f"Insufficient content ({len(full_content)} chars), skipping: {article['title'][:60]}")
+            
+            # CRITICAL: Skip articles with insufficient source content to prevent hallucination
+            if len(full_content) < 300:
+                logger.warning(f"Insufficient source content ({len(full_content)} chars), skipping to prevent AI hallucination")
+                logger.warning("Need minimum 300 chars of source material for quality article generation")
                 return False
         
         # Generate SEO article with betting section
-        seo_article = create_seo_article(article['title'], full_content, keywords, article['source'])
+        seo_article = create_seo_article(article['title'], full_content, keywords, article['source'], article['link'])
         
-        # ALWAYS generate copyright-free image with Cloudflare Flux (Priority 1)
+        # Detect article type for image generation
+        title_lower = seo_article['title'].lower()
+        if any(kw in title_lower for kw in ['boycott', 'ban', 'suspended', 'controversy', 'protest', 'political']):
+            article_type = "political"
+        elif any(kw in title_lower for kw in ['transfer', 'signs', 'joins', 'deal', 'contract', '£', '$']):
+            article_type = "transfer"
+        elif any(kw in title_lower for kw in ['injury', 'injured', 'ruled out', 'sidelined', 'fitness']):
+            article_type = "injury"
+        elif any(kw in title_lower for kw in ['vs', 'v ', 'beat', 'defeat', 'win', 'loss', 'draw', 'final', 'semi-final']):
+            article_type = "match"
+        else:
+            article_type = "news"
+        
+        logger.info(f"Article type detected: {article_type}")
+        
+        # Image generation with fallback strategy:
+        # 1. Try APIFree.ai (fast, cheap, high quality)
+        # 2. Fallback to Cloudflare Flux (free backup)
+        # 3. Fallback to source image (if allowed - COPYRIGHT RISK)
         image_data = None
         media_id = None
         
-        if cf_client.enabled:
-            logger.info("Generating copyright-free image with Cloudflare Flux")
-            image_data = cf_client.generate_image(seo_article['title'])
+        # Try APIFree.ai first (primary)
+        if apifree_client.enabled:
+            logger.info(f"Generating {article_type} image with APIFree.ai Z Image Turbo")
+            image_data = apifree_client.generate_sports_image(seo_article['title'], article_type)
+            if image_data:
+                logger.info("APIFree.ai image generated successfully")
         
-        # Fallback: Extract from source only if allowed and Cloudflare fails
+        # Fallback to Cloudflare if APIFree fails
+        if not image_data and cf_client.enabled:
+            logger.info("APIFree.ai unavailable, using Cloudflare Flux fallback")
+            image_data = cf_client.generate_image(seo_article['title'])
+            if image_data:
+                logger.info("Cloudflare Flux image generated successfully")
+        
+        # Last resort: Extract from source (if allowed - COPYRIGHT RISK)
         if not image_data and ALLOW_SOURCE_IMAGES:
-            logger.warning("Cloudflare unavailable, extracting image from source (COPYRIGHT RISK)")
+            logger.warning("All AI generators unavailable, extracting from source (COPYRIGHT RISK)")
             image_data = extract_image_from_url(article['link'])
         elif not image_data:
-            logger.warning("No Cloudflare image generated and source images disabled (safe mode)")
+            logger.warning("No image generated - all generators unavailable")
         
-        # Optimize and upload image
+        # Optimize and upload image with SEO-friendly filename
         if image_data:
             optimized = optimize_image(image_data)
             if optimized:
-                media_id = wp_client.upload_media(optimized, 'featured.avif')
-                logger.info(f"Uploaded copyright-free featured image")
+                # Generate SEO-friendly filename from title
+                # Convert title to lowercase, replace spaces with hyphens, remove special chars
+                import re
+                seo_filename = re.sub(r'[^a-z0-9-]', '', seo_article['title'].lower().replace(' ', '-').replace('--', '-'))
+                seo_filename = seo_filename[:50]  # Limit length
+                seo_filename = f"{seo_filename}.avif"
+                
+                media_id = wp_client.upload_media(optimized, seo_filename)
+                logger.info(f"Uploaded featured image: {seo_filename}")
         else:
-            logger.warning("Publishing article without image (no copyright risk)")
+            logger.warning("Publishing article without image")
         
         # Add analytics tracking
         final_content = add_analytics_tracking(seo_article['content'], seo_article['title'])
+        
+        # Detect categories and tags
+        detected_categories, detected_tags = detect_categories_and_tags(seo_article['title'], seo_article['content'])
+        
+        # Get WordPress categories
+        wp_categories = wp_client.get_categories()
+        category_ids = []
+        for cat_name in detected_categories:
+            if cat_name.lower() in wp_categories:
+                category_ids.append(wp_categories[cat_name.lower()])
+        
+        # Get or create tags
+        tag_ids = []
+        for tag_name in detected_tags:
+            tag_id = wp_client.get_or_create_tag(tag_name)
+            if tag_id:
+                tag_ids.append(tag_id)
+        
+        # Set publish date to current time
+        from datetime import datetime
+        publish_date = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+        
+        logger.info(f"Categories: {detected_categories} (IDs: {category_ids})")
+        logger.info(f"Tags: {detected_tags} (IDs: {tag_ids})")
         
         # Publish to WordPress
         post_id, post_url = wp_client.create_post(
             title=seo_article['title'],
             content=final_content,
-            featured_media=media_id
+            featured_media=media_id,
+            categories=category_ids,
+            tags=tag_ids,
+            date=publish_date
         )
         
         # Mark as processed
@@ -356,7 +779,8 @@ def main():
         
         # Initialize clients
         serper = SerperClient()
-        cf_client = CloudflareClient()
+        apifree_client = APIFreeClient()  # Primary image generator
+        cf_client = CloudflareClient()    # Fallback image generator
         wp_client = WordPressClient()
         
         logger.info("Starting Nepal Sports News Bot")
@@ -372,7 +796,7 @@ def main():
         # Process articles
         success_count = 0
         for article in articles:
-            if process_article(article, serper, cf_client, wp_client):
+            if process_article(article, serper, apifree_client, cf_client, wp_client):
                 success_count += 1
                 time.sleep(ARTICLE_DELAY_SECONDS)  # Rate limiting
         

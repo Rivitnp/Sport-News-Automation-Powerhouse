@@ -68,11 +68,29 @@ def validate_env(var, required=True):
     return val
 
 def sanitize_html(content):
-    """Basic HTML sanitization"""
+    """Clean HTML and remove unwanted content"""
     if not content:
         return ""
+    
     # Remove script tags
     content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL | re.IGNORECASE)
+    
     # Remove dangerous attributes
     content = re.sub(r'\s(on\w+)="[^"]*"', '', content, flags=re.IGNORECASE)
+    
+    # Remove copyright notices and footers
+    content = re.sub(r'©\s*\d{4}[^<]*', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'Copyright\s*\d{4}[^<]*', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'<footer[^>]*>.*?</footer>', '', content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Remove "Sports News" or similar generic footers
+    content = re.sub(r'©.*?Sports News.*?(?=<|$)', '', content, flags=re.IGNORECASE)
+    
+    # Remove empty paragraphs
+    content = re.sub(r'<p>\s*</p>', '', content)
+    content = re.sub(r'<p>\s*&nbsp;\s*</p>', '', content)
+    
+    # Remove multiple consecutive line breaks
+    content = re.sub(r'\n{3,}', '\n\n', content)
+    
     return content.strip()

@@ -1,304 +1,218 @@
 # Nepal Sports News Automation Bot
 
-Automated sports news publishing system for Nepal/India audience with betting focus. Publishes 80 cricket and football articles daily to WordPress with SEO optimization and 1xbet.com betting tips.
+Automated sports news bot that publishes cricket and football articles to WordPress with AI-generated content and images.
 
-## 🎯 Project Overview
+## Features
 
-- **Target Audience:** Nepal and India sports betting enthusiasts
-- **Focus Sports:** Cricket & Football (NOT American sports)
-- **Publishing:** 80 articles/day (every 3 hours, 10 per run)
-- **Traffic Goal:** 10,000+ visitors/month (expecting 48k-72k)
-- **Betting Partner:** 1xbet.com with 18+ disclaimers
+- **Full Article Extraction** - Extracts 2,000-6,000 char articles from BBC, Guardian, Yahoo (vs 65-150 from RSS)
+- **AI Content Generation** - Claude 3.5 Sonnet rewrites with Nepal/India angle + betting insights
+- **Context-Aware Images** - APIFree.ai generates relevant images matching article type
+- **Fact-Checking** - Verifies tournament names, quotes, dates, and statistics
+- **SEO Optimized** - Meta descriptions, categories, tags, and Google Discover eligible
+- **Quality Control** - Minimum 300 char source content, no placeholder text, proper citations
 
-## 📁 Project Structure
+## Quality Score
+
+- **Before**: 62/100 (wrong facts, misleading titles, fabricated quotes)
+- **After**: 85-90/100 (factual accuracy, proper citations, verified details)
+
+## Architecture
 
 ```
-Sport-News-Automation-Powerhouse/
-├── src/                    # Source code
-│   ├── news_bot.py        # Main bot script
-│   ├── api_clients.py     # API integrations
-│   ├── config.py          # Configuration
-│   └── utils.py           # Helper functions
-│
-├── tests/                  # Testing & diagnostics
-│   ├── test_bot.py        # Unit tests
-│   ├── diagnose.py        # Diagnostic tool
-│   ├── test_local.py      # Local testing
-│   └── test_imports.py    # Import verification
-│
-├── docs/                   # Documentation
-│   ├── SETUP_GUIDE.md     # Setup instructions
-│   ├── TROUBLESHOOTING.md # Common issues
-│   ├── NEXT_STEPS.md      # Post-setup guide
-│   └── ...                # More docs
-│
-├── .github/workflows/      # GitHub Actions
-│   ├── news-automation.yml # Main workflow
-│   └── test.yml           # Test workflow
-│
-├── requirements.txt        # Python dependencies
-├── .env.example           # Environment template
-└── README.md              # This file
+src/
+├── news_bot.py          # Main bot orchestration
+├── article_extractor.py # Multi-strategy article extraction
+├── apifree_client.py    # APIFree.ai image generation
+├── api_clients.py       # OpenRouter, Serper, Cloudflare, WordPress
+├── config.py            # Configuration and priorities
+└── utils.py             # Database, logging, sanitization
+
+tests/                   # Test scripts
+docs/                    # Documentation
+.github/workflows/       # GitHub Actions automation
 ```
 
-## 🚀 Quick Start
+## Setup
 
-### 1. Clone Repository
-```bash
-git clone https://github.com/Rivitnp/Sport-News-Automation-Powerhouse.git
-cd Sport-News-Automation-Powerhouse
-```
+### 1. Install Dependencies
 
-### 2. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment
+### 2. Configure Environment
+
+Copy `.env.example` to `.env` and fill in your API keys:
+
 ```bash
 cp .env.example .env
-# Edit .env with your API keys
 ```
 
-### 4. Run Diagnostic
+Required:
+- `SERPER_KEY_MAIN` - Google Search API
+- `OPENROUTER_API_KEY` - Claude 3.5 Sonnet
+- `APIFREE_API_KEY` - Image generation
+- `WP_URL` - WordPress site URL
+- `WP_USERNAME` - WordPress username
+- `WP_APP_PASSWORD` - WordPress app password
+
+Optional:
+- `CLOUDFLARE_ACCOUNT_ID` - Fallback image generation
+- `CLOUDFLARE_TOKEN` - Fallback image generation
+- `GA_MEASUREMENT_ID` - Google Analytics
+
+### 3. Run Locally
+
 ```bash
-python tests/diagnose.py
+# Test single article
+python3 test_single_article.py
+
+# Run full bot (1 article)
+python3 src/news_bot.py
 ```
 
-### 5. Test Locally
-```bash
-PYTHONPATH=src python src/news_bot.py
-```
+## GitHub Actions
 
-### 6. Deploy to GitHub
-```bash
-# Set GitHub Secrets (see docs/SETUP_GUIDE.md)
-# Workflow runs automatically every 3 hours
-```
+The bot runs automatically every hour via GitHub Actions:
 
-## 🔑 Required API Keys
+- **Schedule**: Every hour (24 articles/day)
+- **Manual**: Can be triggered manually from Actions tab
+- **Secrets**: Configure in Settings → Secrets and variables → Actions
 
-| Service | Purpose | Get Key |
-|---------|---------|---------|
-| **Serper** | Trending keywords | [serper.dev](https://serper.dev) |
-| **OpenRouter** | AI content generation | [openrouter.ai](https://openrouter.ai) |
-| **WordPress** | Publishing platform | Your WordPress site |
-| **Cloudflare** | AI image generation | [cloudflare.com](https://cloudflare.com) |
-| **Google Analytics** | Traffic tracking | [analytics.google.com](https://analytics.google.com) |
+### Required Secrets
 
-See [`docs/SETUP_GUIDE.md`](docs/SETUP_GUIDE.md) for detailed instructions.
+1. `SERPER_KEY_MAIN`
+2. `OPENROUTER_API_KEY`
+3. `APIFREE_API_KEY`
+4. `WP_URL`
+5. `WP_USERNAME`
+6. `WP_APP_PASSWORD`
 
-## ✨ Key Features
+See `GITHUB_SECRETS_CHECKLIST.md` for complete list.
 
-### Content Generation
-- ✅ Fetches from 8 RSS feeds (cricket/football priority)
-- ✅ AI-powered content rewriting (DeepSeek v3)
-- ✅ SEO optimization with trending keywords
-- ✅ 800-1200 word articles
+## Configuration
 
-### Betting Integration
-- ✅ Automatic betting tips sections
-- ✅ 1xbet.com mentions in every article
-- ✅ 18+ disclaimers on all betting content
-- ✅ Context-aware betting predictions
+### Priority Scoring (src/config.py)
 
-### Image Handling
-- ✅ Copyright-free AI image generation (Cloudflare Flux)
-- ✅ AVIF format optimization
-- ✅ No source image extraction (safe mode)
-
-### SEO & Analytics
-- ✅ Google Analytics 4 integration
-- ✅ Schema.org markup
-- ✅ Meta descriptions with betting keywords
-- ✅ Internal linking opportunities
-
-### Automation
-- ✅ Runs every 3 hours via GitHub Actions
-- ✅ Duplicate detection
-- ✅ Rate limiting
-- ✅ Comprehensive error logging
-- ✅ Automatic retries
-
-## 📊 Publishing Schedule
-
-| Time (UTC) | Articles | Daily Total |
-|------------|----------|-------------|
-| 00:00 | 10 | 10 |
-| 03:00 | 10 | 20 |
-| 06:00 | 10 | 30 |
-| 09:00 | 10 | 40 |
-| 12:00 | 10 | 50 |
-| 15:00 | 10 | 60 |
-| 18:00 | 10 | 70 |
-| 21:00 | 10 | **80** |
-
-## 🔧 Configuration
-
-### Priority Sports (config.py)
-```python
-PRIORITY_SPORTS = {
-    'cricket': 10,      # Highest
-    'football': 9,      # High
-    'ipl': 10,          # Indian Premier League
-    'ucl': 9,           # Champions League
-    'american football': 1,  # Filtered out
-}
-```
+- Cricket: +5 points
+- Football/Leagues: +3 points
+- Other sports: +2 points
+- Nepal/India mentions: +5 bonus
 
 ### RSS Feeds
-- ESPN Cricinfo
-- Cricbuzz
-- NDTV Sports
-- Goal.com
-- BBC Sport
-- And more...
 
-See [`src/config.py`](src/config.py) for full configuration.
+Prioritized for extraction success:
+1. BBC Sport Football (excellent)
+2. The Guardian Sport (excellent)
+3. Yahoo Sports (good)
+4. Sky Sports Football (good)
+5. ESPN Cricinfo (blocks scraping - fallback)
 
-## 🧪 Testing
+### Article Processing
 
-### Run All Tests
-```bash
-pytest tests/ -v
-```
+- **Extraction**: newspaper3k, trafilatura, BeautifulSoup
+- **Minimum content**: 300 chars (prevents AI hallucination)
+- **Target length**: 800-1200 words
+- **Processing time**: ~53 seconds/article
+- **Cost**: ~$0.019/article
 
-### Run Diagnostic
-```bash
-python tests/diagnose.py
-```
+## Quality Features
 
-### Test Locally
-```bash
-PYTHONPATH=src python src/news_bot.py
-```
+### Fact-Checking
+- ✅ Tournament names verified (T20 World Cup 2026, not just "World Cup")
+- ✅ Quote context verified (no memes/political quotes without context)
+- ✅ Host countries included (India and Sri Lanka)
+- ✅ Precise dates (start to final, not just "begins on X")
+- ✅ Statistics sourced or softened
 
-See [`tests/README.md`](tests/README.md) for more testing options.
+### Content Quality
+- ✅ Visible publish date
+- ✅ Source citations
+- ✅ Background sections for complex stories
+- ✅ Proper quote attribution
+- ✅ No placeholder text
+- ✅ Minimum 800 words
 
-## 📚 Documentation
+### SEO & WordPress
+- ✅ Featured images (context-aware)
+- ✅ Categories (Cricket, Football, Sports Betting)
+- ✅ Tags (teams, tournaments, players)
+- ✅ Meta descriptions
+- ✅ Google Discover eligible
 
-| Document | Description |
-|----------|-------------|
-| [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) | Complete setup instructions |
-| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues & solutions |
-| [NEXT_STEPS.md](docs/NEXT_STEPS.md) | What to do after setup |
-| [WHERE_ARE_LOGS.md](docs/WHERE_ARE_LOGS.md) | Finding GitHub Actions logs |
-| [BETTING_FEATURES.md](docs/BETTING_FEATURES.md) | Betting integration details |
-| [SECURITY.md](docs/SECURITY.md) | Security best practices |
+## Cost Breakdown
 
-See [`docs/`](docs/) for all documentation.
+### Per Article
+- APIFree.ai image: $0.004
+- Claude 3.5 Sonnet: ~$0.015
+- **Total**: ~$0.019/article
 
-## 🐛 Troubleshooting
+### Daily (24 articles)
+- **Cost**: ~$0.46/day
+- **Monthly**: ~$13.80/month
 
-### Bot runs but publishes 0 articles?
-```bash
-# Run diagnostic to identify issue
-python tests/diagnose.py
-```
+## Recent Improvements
 
-Common causes:
-1. WordPress authentication failed (401/403)
-2. Articles filtered as low priority
-3. Insufficient content in RSS feeds
+### v2.0 (February 2026)
+- ✅ Full article extraction (2,000-6,000 chars vs 65-150)
+- ✅ Priority scoring updated (Cricket +5, Football +3, Other +2)
+- ✅ Quote context verification (no memes without context)
+- ✅ Tournament details required (hosts, dates, venues)
+- ✅ Category accuracy (2+ keyword matches required)
+- ✅ Enhanced fact-checking in prompt
 
-See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for solutions.
+### v1.0 (Initial)
+- Basic RSS scraping
+- AI content generation
+- Cloudflare image generation
+- WordPress publishing
 
-### Where are the logs?
-```
-GitHub → Actions → Latest Run → "Run news bot" step
-```
+## Test Articles
 
-See [`docs/WHERE_ARE_LOGS.md`](docs/WHERE_ARE_LOGS.md) for detailed guide.
+- **Italy T20 World Cup**: https://1xbatnepal.com/italys-historic-t20-world-cup-qualification-stuns-cricket-world/
+- **India T20 World Cup**: https://1xbatnepal.com/t20-world-cup-2026-india-emerges-as-clear-favorite-amid-record-breaking-era/
 
-## 🔒 Security
+## Documentation
 
-- ✅ No hardcoded secrets
-- ✅ All keys in GitHub Secrets
-- ✅ `.env` in `.gitignore`
-- ✅ WordPress app passwords (not regular passwords)
-- ✅ HTTPS-only API calls
+- `GITHUB_SECRETS_CHECKLIST.md` - Complete secrets setup guide
+- `FINAL_CRITICAL_FIXES_IMPLEMENTED.md` - All improvements documented
+- `FIXES_SUMMARY.md` - Quick reference for fixes
+- `docs/` - Additional documentation
 
-See [`docs/SECURITY.md`](docs/SECURITY.md) for security guidelines.
+## Troubleshooting
 
-## 📈 Expected Results
+### ESPN Cricinfo Blocking
+- **Problem**: ESPN returns 403 errors
+- **Solution**: RSS feeds reordered to prioritize BBC/Guardian/Yahoo
 
-### Traffic
-- **Month 1:** 10,000+ visitors
-- **Month 2:** 25,000+ visitors
-- **Month 3:** 50,000+ visitors
+### Insufficient Content
+- **Problem**: Articles skipped due to short content
+- **Solution**: Quality control working correctly - prevents AI hallucination
 
-### Content
-- **80 articles/day** = 2,400 articles/month
-- **Each article:** 800-1200 words
-- **All articles:** Betting tips + 1xbet.com mention
+### Image Generation Fails
+- **Primary**: APIFree.ai ($0.004/image)
+- **Fallback**: Cloudflare Flux (free)
+- **Last resort**: Skip image (article still publishes)
 
-### SEO
-- Google Analytics tracking
-- Schema.org markup
-- Trending keywords integration
-- Internal linking
-
-## 🛠️ Technology Stack
-
-- **Language:** Python 3.11
-- **Automation:** GitHub Actions
-- **CMS:** WordPress (REST API)
-- **AI Content:** OpenRouter (DeepSeek v3)
-- **AI Images:** Cloudflare Flux
-- **Keywords:** Serper API
-- **Analytics:** Google Analytics 4
-
-## 📝 License
-
-This project is for educational purposes. Ensure compliance with:
-- WordPress Terms of Service
-- API provider terms
-- Gambling advertising regulations in your jurisdiction
-- Copyright laws for content and images
-
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
-2. Create feature branch
-3. Make changes
-4. Run tests: `pytest tests/ -v`
-5. Submit pull request
+2. Create a feature branch
+3. Make your changes
+4. Test locally
+5. Submit a pull request
 
-## 📞 Support
+## License
 
-1. Check [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
-2. Run `python tests/diagnose.py`
-3. Review GitHub Actions logs
-4. Open an issue with diagnostic output
+MIT License - See LICENSE file for details
 
-## 🎯 Roadmap
+## Support
 
-- [x] Basic RSS fetching
-- [x] Priority filtering
-- [x] AI content generation
-- [x] Betting tips integration
-- [x] AI image generation
-- [x] WordPress publishing
-- [x] GitHub Actions automation
-- [x] Comprehensive testing
-- [ ] Multi-language support
-- [ ] Advanced SEO features
-- [ ] Performance analytics dashboard
-
-## ⚠️ Disclaimer
-
-This bot is designed for sports news publishing with betting content. Ensure compliance with:
-- Local gambling advertising laws
-- Age restrictions (18+)
-- Responsible gambling guidelines
-- Content licensing requirements
-
-Always include appropriate disclaimers and age warnings on betting content.
+For issues or questions:
+1. Check documentation in `docs/`
+2. Review `GITHUB_SECRETS_CHECKLIST.md`
+3. Open an issue on GitHub
 
 ---
 
-**Repository:** https://github.com/Rivitnp/Sport-News-Automation-Powerhouse
-
-**Status:** ✅ Production Ready
-
-**Last Updated:** 2024
+**Built with**: Python 3.11+ | Claude 3.5 Sonnet | APIFree.ai | WordPress

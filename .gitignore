@@ -42,3 +42,12 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+
+# Archive (old documentation and test files)
+archive/
+
+# Test files
+test_*.py
+test_*.png
+test_*.html
+test_*.avif

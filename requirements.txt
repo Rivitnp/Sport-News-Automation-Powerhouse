@@ -7,3 +7,6 @@ pillow-avif-plugin==1.4.5
 tenacity==9.0.0
 pytest==8.3.3
 python-dotenv==1.0.0
+newspaper3k==0.2.8
+trafilatura==1.8.0
+readability-lxml==0.8.1

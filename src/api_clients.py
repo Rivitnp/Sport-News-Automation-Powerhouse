@@ -56,7 +56,7 @@ class SerperClient:
 class OpenRouterClient:
     def __init__(self):
         self.api_key = validate_env('OPENROUTER_API_KEY')
-        self.model = validate_env('OPENROUTER_MODEL', False) or 'deepseek/deepseek-v3:free'
+        self.model = validate_env('OPENROUTER_MODEL', False) or 'deepseek/deepseek-chat'
         self.session = requests.Session()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10))
@@ -88,30 +88,53 @@ class CloudflareClient:
         self.enabled = bool(self.account_id and self.token)
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8))
-    def generate_image(self, prompt, width=1200, height=675):
+    def generate_image(self, prompt, width=1200, height=672):
         """Generate copyright-free image using Cloudflare Flux for sports news"""
         if not self.enabled:
             logger.warning("Cloudflare not configured, skipping image generation")
             return None
         
-        # Enhance prompt for sports news context
-        sport_keywords = ['cricket', 'football', 'soccer', 'ipl', 'ucl', 'premier league']
+        # Ensure dimensions are divisible by 8 (Flux requirement)
+        width = (width // 8) * 8
+        height = (height // 8) * 8
+        
+        # Create highly specific, relevant prompts based on article title
         enhanced_prompt = prompt.lower()
         
-        # Detect sport type and create better prompt
-        if any(kw in enhanced_prompt for kw in ['cricket', 'ipl']):
-            image_prompt = f"Professional cricket match action photo, stadium atmosphere, dynamic sports photography, high quality, realistic, {prompt[:80]}"
-        elif any(kw in enhanced_prompt for kw in ['football', 'soccer', 'ucl', 'premier league']):
-            image_prompt = f"Professional football match action photo, stadium atmosphere, dynamic sports photography, high quality, realistic, {prompt[:80]}"
-        else:
-            image_prompt = f"Professional sports news photo, stadium atmosphere, dynamic action, high quality, realistic, {prompt[:80]}"
+        # Extract key terms from title for better image relevance
+        title_lower = prompt.lower()
         
+        # Cricket-specific scenarios
+        if 'ipl' in title_lower or 'indian premier league' in title_lower:
+            image_prompt = "vibrant IPL cricket stadium packed with cheering fans, professional cricketers in colorful team jerseys, intense match action, floodlights, energetic atmosphere, photorealistic sports photography, 8k ultra detailed"
+        elif 'test cricket' in title_lower or 'test match' in title_lower:
+            image_prompt = "traditional test cricket match, players in white uniforms, green cricket field, classic stadium, professional sports photography, bright daylight, photorealistic, 8k quality"
+        elif 't20' in title_lower or 'twenty20' in title_lower:
+            image_prompt = "exciting T20 cricket match, dynamic batting action, packed stadium with enthusiastic crowd, colorful team jerseys, floodlit evening match, photorealistic sports photography, 8k ultra detailed"
+        elif 'world cup' in title_lower and 'cricket' in title_lower:
+            image_prompt = "ICC Cricket World Cup match, international cricket stadium filled with fans, players in national team colors, dramatic match moment, professional sports photography, photorealistic, 8k quality"
+        elif any(kw in title_lower for kw in ['cricket', 'batting', 'bowling', 'wicket', 'over']):
+            image_prompt = "professional cricket match action, batsman hitting ball, bowler in delivery stride, packed stadium atmosphere, bright daylight, photorealistic sports photography, 8k ultra detailed"
+        
+        # Football-specific scenarios
+        elif 'premier league' in title_lower:
+            image_prompt = "English Premier League football match, iconic stadium packed with fans, players in team jerseys competing for ball, intense action moment, professional sports photography, photorealistic, 8k quality"
+        elif 'champions league' in title_lower or 'ucl' in title_lower:
+            image_prompt = "UEFA Champions League football match, massive European stadium, players in club jerseys, dramatic match action, floodlit evening, photorealistic sports photography, 8k ultra detailed"
+        elif 'world cup' in title_lower and 'football' in title_lower:
+            image_prompt = "FIFA World Cup football match, international stadium filled with passionate fans, players in national team colors, exciting match moment, professional sports photography, photorealistic, 8k quality"
+        elif any(kw in title_lower for kw in ['football', 'soccer', 'goal', 'striker', 'midfielder']):
+            image_prompt = "professional football match action, players competing for ball, packed stadium with cheering crowd, dynamic sports moment, bright stadium lights, photorealistic sports photography, 8k ultra detailed"
+        
+        # Generic sports fallback
+        else:
+            image_prompt = "professional sports stadium filled with enthusiastic fans, athletes in action, dramatic sporting moment, perfect lighting, photorealistic sports photography, 8k ultra detailed quality"
+        
+        # Use Flux for high-quality images
         url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell"
         headers = {"Authorization": f"Bearer {self.token}"}
         data = {
             "prompt": image_prompt,
-            "width": width,
-            "height": height,
             "num_steps": 4
         }
         
@@ -166,8 +189,8 @@ class WordPressClient:
         return media_id
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10))
-    def create_post(self, title, content, featured_media=None, categories=None, tags=None):
-        """Create WordPress post"""
+    def create_post(self, title, content, featured_media=None, categories=None, tags=None, date=None):
+        """Create WordPress post with categories, tags, and date"""
         data = {
             'title': title,
             'content': content,
@@ -177,6 +200,8 @@ class WordPressClient:
         }
         if featured_media:
             data['featured_media'] = featured_media
+        if date:
+            data['date'] = date  # ISO 8601 format: 2026-02-05T12:00:00
         
         try:
             resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
@@ -195,6 +220,47 @@ class WordPressClient:
             elif resp.status_code == 403:
                 logger.error("Permission denied - user needs 'publish_posts' capability")
             raise
+    
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8))
+    def get_categories(self):
+        """Get all WordPress categories"""
+        try:
+            resp = self.session.get(f"{self.url}/wp-json/wp/v2/categories?per_page=100", timeout=10)
+            resp.raise_for_status()
+            categories = resp.json()
+            return {cat['name'].lower(): cat['id'] for cat in categories}
+        except Exception as e:
+            logger.error(f"Failed to fetch categories: {e}")
+            return {}
+    
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8))
+    def get_or_create_tag(self, tag_name):
+        """Get existing tag ID or create new tag"""
+        try:
+            # Search for existing tag
+            resp = self.session.get(
+                f"{self.url}/wp-json/wp/v2/tags?search={tag_name}",
+                timeout=10
+            )
+            resp.raise_for_status()
+            tags = resp.json()
+            
+            # Return existing tag if found
+            for tag in tags:
+                if tag['name'].lower() == tag_name.lower():
+                    return tag['id']
+            
+            # Create new tag if not found
+            resp = self.session.post(
+                f"{self.url}/wp-json/wp/v2/tags",
+                json={'name': tag_name},
+                timeout=10
+            )
+            resp.raise_for_status()
+            return resp.json()['id']
+        except Exception as e:
+            logger.error(f"Failed to get/create tag '{tag_name}': {e}")
+            return None
 
 def optimize_image(image_data, max_size_mb=2):
     """Optimize image to AVIF format with size limit"""
