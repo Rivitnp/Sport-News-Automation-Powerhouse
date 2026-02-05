@@ -202,27 +202,36 @@ class WordPressClient:
         if date:
             data['date'] = date  # ISO 8601 format: 2026-02-05T12:00:00
         
-        resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
-        
-        # Check for errors
-        if resp.status_code >= 400:
-            error_msg = f"WordPress API returned {resp.status_code}"
-            logger.error(error_msg)
-            logger.error(f"Response: {resp.text[:500]}")
+        try:
+            logger.info(f"Posting to: {self.url}/wp-json/wp/v2/posts")
+            logger.info(f"Using auth: {self.username}")
             
-            if resp.status_code == 401:
-                logger.error("❌ Authentication failed - check WP_USERNAME and WP_APP_PASSWORD in GitHub Secrets")
-            elif resp.status_code == 403:
-                logger.error("❌ Permission denied - user needs 'publish_posts' capability")
-            elif resp.status_code == 400:
-                logger.error("❌ Bad request - check post data format (title, content, categories, tags)")
+            resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
             
-            resp.raise_for_status()  # This will raise HTTPError
-        
-        post_id = resp.json()['id']
-        post_url = resp.json()['link']
-        logger.info(f"Created post ID: {post_id} at {post_url}")
-        return post_id, post_url
+            logger.info(f"WordPress response status: {resp.status_code}")
+            
+            # Check for errors
+            if resp.status_code >= 400:
+                error_msg = f"WordPress API returned {resp.status_code}"
+                logger.error(error_msg)
+                logger.error(f"Response body: {resp.text[:1000]}")
+                
+                if resp.status_code == 401:
+                    logger.error("❌ 401 Unauthorized - check WP_USERNAME and WP_APP_PASSWORD")
+                elif resp.status_code == 403:
+                    logger.error("❌ 403 Forbidden - user needs 'publish_posts' capability")
+                elif resp.status_code == 400:
+                    logger.error("❌ 400 Bad Request - check post data format")
+                
+                resp.raise_for_status()  # This will raise HTTPError
+            
+            post_id = resp.json()['id']
+            post_url = resp.json()['link']
+            logger.info(f"✅ Created post ID: {post_id} at {post_url}")
+            return post_id, post_url
+        except Exception as e:
+            logger.error(f"❌ WordPress error: {type(e).__name__}: {e}")
+            raise
     
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8))
     def get_categories(self):
