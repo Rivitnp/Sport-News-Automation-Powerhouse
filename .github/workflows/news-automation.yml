@@ -1,9 +1,9 @@
 name: Sports News Automation
 
 on:
-  schedule:
-    - cron: '0 * * * *'  # Every hour (24 runs/day = 24 articles/day)
-  workflow_dispatch:  # Manual trigger
+  # schedule:
+  #   - cron: '0 * * * *'  # Every hour (24 runs/day = 24 articles/day) - DISABLED
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   publish-news:
