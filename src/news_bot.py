@@ -381,6 +381,11 @@ def create_seo_article(title, content, keywords, source, source_url=""):
     from datetime import datetime
     current_date = datetime.utcnow().strftime('%B %d, %Y')
     
+    # GENERATE THUMBNAILSPEC DIRECTLY (don't rely on Claude)
+    logger.info("📸 Generating ThumbnailSpec directly from article...")
+    thumbnail_spec = ThumbnailSpecBuilder.build_spec(title, content)
+    logger.info(f"✅ ThumbnailSpec generated: {thumbnail_spec.get('sport')} {thumbnail_spec.get('news_type')} using {thumbnail_spec.get('layout_template')}")
+    
     # ULTRA-SPECIFIC PROMPT FOR CLAUDE 3.5 SONNET
     # Designed to produce natural, engaging, SEO-optimized content with FACT-CHECKING
     prompt = f"""You are writing a sports news article targeting cricket and football fans.
@@ -573,23 +578,6 @@ TITLE: Your 50-60 char title - MUST accurately reflect story
 
 META: Your 150-160 char meta description
 
-THUMBNAILSPEC_JSON_START
-{{
-  "topic": "NCAAB/Cricket/Football matchup or news type",
-  "headline_text": "Article headline, max 40 chars, UPPERCASE",
-  "sub_text": "Subheading like BETTING INSIGHTS, max 30 chars",
-  "layout": "lineup_5_figures or symbolic or action_moment",
-  "aspect_ratio": "16:9",
-  "team_left_color": "color description, e.g. royal blue and white",
-  "team_right_color": "color description, e.g. deep red and white",
-  "no_real_people": true,
-  "no_team_logos": true,
-  "style": "3D action-figure poster or cinematic editorial or action photography",
-  "background": "dark gradient studio or stadium night floodlights or etc",
-  "negative_space": "top for headline or sides for text or etc"
-}}
-THUMBNAILSPEC_JSON_END
-
 CONTENT:
 Your complete HTML article starting with publish date, then opening paragraph
 
@@ -619,11 +607,15 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
     # Log the raw response for debugging
     logger.debug(f"Claude response (first 500 chars): {response[:500]}")
     
-    # Parse response - extract TITLE, META, THUMBNAILSPEC, and CONTENT
+    # Check if Claude provided ThumbnailSpec
+    if 'THUMBNAILSPEC_JSON_START' not in response:
+        logger.warning("⚠️ Claude didn't provide ThumbnailSpec markers - checking for JSON...")
+        logger.debug(f"Full response (first 1000 chars): {response[:1000]}")
+    
+    # Parse response - extract TITLE, META, and CONTENT (ThumbnailSpec is already generated)
     lines = response.split('\n')
     new_title = title
     meta_desc = ""
-    thumbnail_spec = {}
     html_content = response
     
     # Extract TITLE
@@ -638,52 +630,23 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
             meta_desc = re.sub(r'META:\s*', '', line).strip()
             break
     
-    # Extract THUMBNAILSPEC (between markers)
-    try:
-        if 'THUMBNAILSPEC_JSON_START' in response and 'THUMBNAILSPEC_JSON_END' in response:
-            json_start = response.find('THUMBNAILSPEC_JSON_START') + len('THUMBNAILSPEC_JSON_START')
-            json_end = response.find('THUMBNAILSPEC_JSON_END')
-            json_str = response[json_start:json_end].strip()
-            
-            # Clean up the JSON string
-            json_str = re.sub(r'```json\s*', '', json_str)
-            json_str = re.sub(r'```\s*', '', json_str)
-            json_str = json_str.strip()
-            
-            if json_str:
-                thumbnail_spec = json.loads(json_str)
-                logger.info(f"✅ Extracted ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
-            else:
-                logger.warning("ThumbnailSpec markers found but JSON is empty")
-        else:
-            logger.warning("ThumbnailSpec markers not found in Claude response")
-    except json.JSONDecodeError as e:
-        logger.warning(f"Failed to parse ThumbnailSpec JSON: {e}")
-        logger.warning(f"JSON string (first 300 chars): {json_str[:300] if 'json_str' in locals() else 'N/A'}")
-    except Exception as e:
-        logger.warning(f"Error extracting ThumbnailSpec: {e}")
-    
     # Extract CONTENT (everything after CONTENT: marker)
     if 'CONTENT:' in response:
         content_start = response.find('CONTENT:') + len('CONTENT:')
         html_content = response[content_start:].strip()
     else:
-        # Fallback: use everything after the JSON block
-        if 'THUMBNAILSPEC_JSON_END' in response:
-            content_start = response.find('THUMBNAILSPEC_JSON_END') + len('THUMBNAILSPEC_JSON_END')
-            html_content = response[content_start:].strip()
+        # Fallback: use everything after META
+        if 'META:' in response:
+            content_start = response.find('META:')
+            # Find the next section after META
+            lines_after_meta = response[content_start:].split('\n')[1:]
+            html_content = '\n'.join(lines_after_meta).strip()
     
     # Remove any remaining markdown formatting from content
     html_content = re.sub(r'\*\*CONTENT:\*\*', '', html_content)
     html_content = re.sub(r'\*\*Title:\*\*.*?\n', '', html_content)
     html_content = re.sub(r'\*\*Meta:\*\*.*?\n', '', html_content)
     html_content = html_content.strip()
-    
-    # If Claude didn't provide ThumbnailSpec, generate a basic one
-    if not thumbnail_spec:
-        logger.warning("Claude didn't provide ThumbnailSpec, generating fallback")
-        thumbnail_spec = generate_fallback_thumbnail_spec(new_title, article_type="match")
-        logger.info(f"Generated fallback ThumbnailSpec")
     
     # Ensure betting disclaimer is present if betting context detected
     if betting_context and BETTING_BRAND not in html_content:
@@ -697,7 +660,7 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
         'title': new_title,
         'content': sanitize_html(html_content),
         'meta': meta_desc,
-        'thumbnail_spec': thumbnail_spec
+        'thumbnail_spec': thumbnail_spec  # Use the one we generated directly
     }
 
 def add_analytics_tracking(content, post_url):
