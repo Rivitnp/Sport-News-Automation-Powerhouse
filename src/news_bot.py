@@ -574,7 +574,7 @@ TITLE: Your 50-60 char title - MUST accurately reflect story
 META: Your 150-160 char meta description
 
 THUMBNAILSPEC_JSON_START
-{
+{{
   "topic": "NCAAB/Cricket/Football matchup or news type",
   "headline_text": "Article headline, max 40 chars, UPPERCASE",
   "sub_text": "Subheading like BETTING INSIGHTS, max 30 chars",
@@ -587,7 +587,7 @@ THUMBNAILSPEC_JSON_START
   "style": "3D action-figure poster or cinematic editorial or action photography",
   "background": "dark gradient studio or stadium night floodlights or etc",
   "negative_space": "top for headline or sides for text or etc"
-}
+}}
 THUMBNAILSPEC_JSON_END
 
 CONTENT:
