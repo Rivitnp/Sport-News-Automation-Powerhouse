@@ -36,7 +36,7 @@ class APIFreeClient:
             bytes: Image data (PNG format)
         """
         if not self.enabled:
-            logger.error("APIFree.ai not configured")
+            logger.error("APIFree.ai not configured (no API key)")
             return None
         
         headers = {
@@ -47,7 +47,7 @@ class APIFreeClient:
         # Step 1: Submit request
         payload = {
             "model": "tongyi-mai/z-image-turbo",
-            "prompt": prompt,
+            "prompt": prompt[:1000],  # Limit prompt length
             "width": width,
             "height": height,
             "num_images": 1,
@@ -56,11 +56,13 @@ class APIFreeClient:
         
         # Add negative prompt if provided
         if negative_prompt:
-            payload["negative_prompt"] = negative_prompt
+            payload["negative_prompt"] = negative_prompt[:500]
         
         try:
             # Submit generation request
-            logger.info(f"Submitting image generation to APIFree.ai...")
+            logger.info(f"📤 Submitting to APIFree.ai (Z-Image Turbo)...")
+            logger.debug(f"Prompt length: {len(prompt)} chars, Steps: {num_inference_steps}")
+            
             submit_resp = requests.post(
                 f"{self.base_url}/v1/image/submit",
                 headers=headers,
@@ -72,11 +74,13 @@ class APIFreeClient:
             submit_data = submit_resp.json()
             
             if submit_data.get("code") != 200:
-                logger.error(f"APIFree.ai submission failed: {submit_data.get('code_msg')}")
+                error_msg = submit_data.get('code_msg', 'Unknown error')
+                logger.error(f"❌ APIFree.ai submission failed: {error_msg}")
+                logger.debug(f"Response: {submit_data}")
                 return None
             
             request_id = submit_data["resp_data"]["request_id"]
-            logger.info(f"Request submitted. ID: {request_id}")
+            logger.info(f"✅ Request submitted. ID: {request_id}")
             
             # Step 2: Poll for result (max 30 seconds)
             max_attempts = 15  # 15 attempts × 2 seconds = 30 seconds max
@@ -94,7 +98,8 @@ class APIFreeClient:
                 result_data = result_resp.json()
                 
                 if result_data.get("code") != 200:
-                    logger.error(f"APIFree.ai check failed: {result_data.get('code_msg')}")
+                    error_msg = result_data.get('code_msg', 'Unknown error')
+                    logger.error(f"❌ APIFree.ai status check failed: {error_msg}")
                     return None
                 
                 status = result_data["resp_data"]["status"]
@@ -103,45 +108,47 @@ class APIFreeClient:
                     # Get image URL
                     image_list = result_data["resp_data"]["image_list"]
                     if not image_list:
-                        logger.error("No images in response")
+                        logger.error("❌ No images in response")
                         return None
                     
                     image_url = image_list[0]
                     cost = result_data["resp_data"]["usage"]["cost"]
                     
-                    logger.info(f"Image generated successfully (cost: ${cost})")
+                    logger.info(f"✅ Image generated successfully (cost: ${cost})")
                     
                     # Download image
                     img_resp = requests.get(image_url, timeout=30)
                     img_resp.raise_for_status()
                     
                     image_data = img_resp.content
-                    logger.info(f"Downloaded image: {len(image_data)/1024:.1f}KB")
+                    logger.info(f"✅ Downloaded image: {len(image_data)/1024:.1f}KB")
                     
                     return image_data
                 
                 elif status in ["error", "failed"]:
                     error_msg = result_data["resp_data"].get("error", "Unknown error")
-                    logger.error(f"Image generation failed: {error_msg}")
+                    logger.error(f"❌ Image generation failed: {error_msg}")
                     return None
                 
                 elif status in ["queuing", "processing"]:
-                    logger.info(f"Status: {status}... (attempt {attempt}/{max_attempts})")
+                    logger.info(f"⏳ Status: {status}... (attempt {attempt}/{max_attempts})")
                     continue
                 
                 else:
-                    logger.warning(f"Unknown status: {status}")
+                    logger.warning(f"⚠️ Unknown status: {status}")
                     continue
             
             # Timeout
-            logger.error(f"Image generation timeout after {max_attempts * 2} seconds")
+            logger.error(f"❌ Image generation timeout after {max_attempts * 2} seconds")
             return None
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"APIFree.ai request failed: {e}")
+            logger.error(f"❌ APIFree.ai request failed: {e}")
             return None
         except Exception as e:
-            logger.error(f"APIFree.ai error: {e}")
+            logger.error(f"❌ APIFree.ai error: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return None
     
     def generate_sports_image(self, title, article_type="match"):

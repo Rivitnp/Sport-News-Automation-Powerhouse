@@ -118,9 +118,12 @@ class PromptBuilder:
             str: Production-ready Z-Image Turbo prompt
         """
         
+        # Validate and fix spec first
+        PromptBuilder.validate_spec(spec)
+        
         layout = spec.get("layout", "lineup_5_figures")
         
-        if layout == "lineup_5_figures":
+        if layout == "lineup_5_figures" or layout == "lineup_5":
             prompt = PromptBuilder.build_lineup_5_prompt(spec)
         elif layout == "symbolic":
             prompt = PromptBuilder.build_symbolic_prompt(spec)
@@ -130,31 +133,44 @@ class PromptBuilder:
             logger.warning(f"Unknown layout: {layout}, defaulting to lineup_5_figures")
             prompt = PromptBuilder.build_lineup_5_prompt(spec)
         
-        logger.info(f"Built prompt for {layout} layout ({len(prompt)} chars)")
+        logger.info(f"✅ Built prompt for {layout} layout ({len(prompt)} chars)")
         return prompt
     
     @staticmethod
     def validate_spec(spec: Dict) -> bool:
         """Validate ThumbnailSpec has required fields"""
+        # Handle both old and new layout names
+        layout = spec.get("layout", "")
+        if layout == "lineup_5":
+            spec["layout"] = "lineup_5_figures"
+        
         required = [
             "topic", "headline_text", "layout", "aspect_ratio",
-            "team_left_color", "team_right_color", "no_real_people", "no_team_logos"
+            "team_left_color", "team_right_color"
         ]
         
         for field in required:
-            if field not in spec:
-                logger.error(f"Missing required field in ThumbnailSpec: {field}")
-                return False
+            if field not in spec or not spec[field]:
+                logger.warning(f"Missing or empty field in ThumbnailSpec: {field}")
+                # Don't fail validation, use defaults
+                if field == "team_left_color":
+                    spec["team_left_color"] = "blue and white"
+                elif field == "team_right_color":
+                    spec["team_right_color"] = "red and white"
+                elif field == "layout":
+                    spec["layout"] = "lineup_5_figures"
         
         # Validate headline length
-        if len(spec.get("headline_text", "")) > 40:
-            logger.warning(f"Headline too long ({len(spec['headline_text'])} chars), should be max 40")
+        headline = spec.get("headline_text", "")
+        if len(headline) > 40:
+            logger.warning(f"Headline too long ({len(headline)} chars), truncating to 40")
+            spec["headline_text"] = headline[:40]
         
         # Validate layout
         valid_layouts = ["lineup_5_figures", "symbolic", "action_moment"]
         if spec.get("layout") not in valid_layouts:
-            logger.error(f"Invalid layout: {spec.get('layout')}, must be one of {valid_layouts}")
-            return False
+            logger.warning(f"Invalid layout: {spec.get('layout')}, defaulting to lineup_5_figures")
+            spec["layout"] = "lineup_5_figures"
         
         return True
 

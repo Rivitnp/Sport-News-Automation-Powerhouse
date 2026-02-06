@@ -324,6 +324,53 @@ def detect_categories_and_tags(title, content):
     
     return detected_categories, tags
 
+def generate_fallback_thumbnail_spec(title, article_type="match"):
+    """Generate a fallback ThumbnailSpec if Claude doesn't provide one"""
+    logger.warning("⚠️ Generating fallback ThumbnailSpec (Claude didn't provide one)")
+    
+    # Detect sport and colors from title
+    title_lower = title.lower()
+    
+    # Determine sport
+    if any(kw in title_lower for kw in ['cricket', 'ipl', 't20', 'test', 'odi', 'wicket']):
+        sport = "cricket"
+        left_color = "blue and white"
+        right_color = "green and white"
+    elif any(kw in title_lower for kw in ['football', 'soccer', 'premier', 'champions', 'ucl']):
+        sport = "football"
+        left_color = "red and white"
+        right_color = "blue and white"
+    else:
+        sport = "sports"
+        left_color = "blue and white"
+        right_color = "red and white"
+    
+    # Determine layout based on article type
+    if article_type == "political":
+        layout = "symbolic"
+    elif article_type in ["injury", "performance"]:
+        layout = "action_moment"
+    else:
+        layout = "lineup_5_figures"
+    
+    spec = {
+        "topic": f"{sport} {article_type}",
+        "headline_text": title[:40].upper(),
+        "sub_text": article_type.upper(),
+        "layout": layout,
+        "aspect_ratio": "16:9",
+        "team_left_color": left_color,
+        "team_right_color": right_color,
+        "no_real_people": True,
+        "no_team_logos": True,
+        "style": "3D action-figure poster" if layout == "lineup_5_figures" else "cinematic editorial still-life",
+        "background": "dark gradient studio" if layout == "lineup_5_figures" else "stadium night floodlights",
+        "negative_space": "top for headline"
+    }
+    
+    logger.info(f"Generated fallback spec: {sport} {article_type} using {layout} layout")
+    return spec
+
 def create_seo_article(title, content, keywords, source, source_url=""):
     """Generate SEO-optimized article with betting section for Nepal/India audience"""
     
@@ -526,8 +573,8 @@ TITLE: Your 50-60 char title - MUST accurately reflect story
 
 META: Your 150-160 char meta description
 
-THUMBNAILSPEC:
-{{
+THUMBNAILSPEC_JSON_START
+{
   "topic": "NCAAB/Cricket/Football matchup or news type",
   "headline_text": "Article headline, max 40 chars, UPPERCASE",
   "sub_text": "Subheading like BETTING INSIGHTS, max 30 chars",
@@ -540,7 +587,8 @@ THUMBNAILSPEC:
   "style": "3D action-figure poster or cinematic editorial or action photography",
   "background": "dark gradient studio or stadium night floodlights or etc",
   "negative_space": "top for headline or sides for text or etc"
-}}
+}
+THUMBNAILSPEC_JSON_END
 
 CONTENT:
 Your complete HTML article starting with publish date, then opening paragraph
@@ -578,54 +626,52 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
     thumbnail_spec = {}
     html_content = response
     
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        line_stripped = line.strip()
-        
-        # Extract TITLE
-        if line_stripped.startswith('TITLE:') or line_stripped.startswith('**TITLE:'):
-            new_title = re.sub(r'\*\*TITLE:\*\*|\*\*TITLE:|\bTITLE:\s*', '', line).strip()
-            new_title = new_title.replace('**', '').strip()
-        
-        # Extract META
-        elif line_stripped.startswith('META:') or line_stripped.startswith('**META:'):
-            meta_desc = re.sub(r'\*\*META:\*\*|\*\*META:|\bMETA:\s*', '', line).strip()
-            meta_desc = meta_desc.replace('**', '').strip()
-        
-        # Extract THUMBNAILSPEC (JSON block)
-        elif line_stripped.startswith('THUMBNAILSPEC:') or line_stripped.startswith('**THUMBNAILSPEC:'):
-            # Find the JSON block
-            json_start = i + 1
-            json_lines = []
-            brace_count = 0
-            
-            for j in range(json_start, len(lines)):
-                json_line = lines[j]
-                json_lines.append(json_line)
-                brace_count += json_line.count('{') - json_line.count('}')
-                
-                if brace_count == 0 and '{' in '\n'.join(json_lines):
-                    # JSON block complete
-                    try:
-                        json_str = '\n'.join(json_lines)
-                        thumbnail_spec = json.loads(json_str)
-                        logger.info(f"✅ Extracted ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Failed to parse ThumbnailSpec JSON: {e}")
-                        logger.warning(f"JSON string: {json_str[:200]}")
-                    
-                    i = j
-                    break
-        
-        # Extract CONTENT
-        elif line_stripped.startswith('CONTENT:') or line_stripped.startswith('**CONTENT:'):
-            html_content = '\n'.join(lines[i+1:])
+    # Extract TITLE
+    for line in lines:
+        if line.strip().startswith('TITLE:'):
+            new_title = re.sub(r'TITLE:\s*', '', line).strip()
             break
-
-        i += 1
-        
-        i += 1
+    
+    # Extract META
+    for line in lines:
+        if line.strip().startswith('META:'):
+            meta_desc = re.sub(r'META:\s*', '', line).strip()
+            break
+    
+    # Extract THUMBNAILSPEC (between markers)
+    try:
+        if 'THUMBNAILSPEC_JSON_START' in response and 'THUMBNAILSPEC_JSON_END' in response:
+            json_start = response.find('THUMBNAILSPEC_JSON_START') + len('THUMBNAILSPEC_JSON_START')
+            json_end = response.find('THUMBNAILSPEC_JSON_END')
+            json_str = response[json_start:json_end].strip()
+            
+            # Clean up the JSON string
+            json_str = re.sub(r'```json\s*', '', json_str)
+            json_str = re.sub(r'```\s*', '', json_str)
+            json_str = json_str.strip()
+            
+            if json_str:
+                thumbnail_spec = json.loads(json_str)
+                logger.info(f"✅ Extracted ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
+            else:
+                logger.warning("ThumbnailSpec markers found but JSON is empty")
+        else:
+            logger.warning("ThumbnailSpec markers not found in Claude response")
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse ThumbnailSpec JSON: {e}")
+        logger.warning(f"JSON string (first 300 chars): {json_str[:300] if 'json_str' in locals() else 'N/A'}")
+    except Exception as e:
+        logger.warning(f"Error extracting ThumbnailSpec: {e}")
+    
+    # Extract CONTENT (everything after CONTENT: marker)
+    if 'CONTENT:' in response:
+        content_start = response.find('CONTENT:') + len('CONTENT:')
+        html_content = response[content_start:].strip()
+    else:
+        # Fallback: use everything after the JSON block
+        if 'THUMBNAILSPEC_JSON_END' in response:
+            content_start = response.find('THUMBNAILSPEC_JSON_END') + len('THUMBNAILSPEC_JSON_END')
+            html_content = response[content_start:].strip()
     
     # Remove any remaining markdown formatting from content
     html_content = re.sub(r'\*\*CONTENT:\*\*', '', html_content)
@@ -635,21 +681,8 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
     
     # If Claude didn't provide ThumbnailSpec, generate a basic one
     if not thumbnail_spec:
-        logger.warning("Claude didn't provide ThumbnailSpec, generating basic one")
-        thumbnail_spec = {
-            "topic": "sports news",
-            "headline_text": new_title[:40].upper(),
-            "sub_text": "SPORTS NEWS",
-            "layout": "lineup_5_figures",
-            "aspect_ratio": "16:9",
-            "team_left_color": "blue and white",
-            "team_right_color": "red and white",
-            "no_real_people": True,
-            "no_team_logos": True,
-            "style": "3D action-figure poster",
-            "background": "dark gradient studio",
-            "negative_space": "top for headline"
-        }
+        logger.warning("Claude didn't provide ThumbnailSpec, generating fallback")
+        thumbnail_spec = generate_fallback_thumbnail_spec(new_title, article_type="match")
         logger.info(f"Generated fallback ThumbnailSpec")
     
     # Ensure betting disclaimer is present if betting context detected
@@ -761,7 +794,7 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
         # Extract ThumbnailSpec from seo_article (Claude generated it)
         thumbnail_spec = seo_article.get('thumbnail_spec', {})
         
-        if thumbnail_spec:
+        if thumbnail_spec and thumbnail_spec.get('topic'):
             logger.info(f"Using ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
             
             # Validate spec
@@ -770,35 +803,48 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
                 prompt = PromptBuilder.build_prompt(thumbnail_spec)
                 logger.info(f"Built prompt ({len(prompt)} chars) for {thumbnail_spec.get('layout', 'unknown')} layout")
                 
-                # Generate image with APIFree.ai
+                # Generate image with APIFree.ai (PRIMARY METHOD)
                 if apifree_client.enabled:
-                    logger.info("Generating image with APIFree.ai using ThumbnailSpec prompt")
+                    logger.info("🎨 PRIMARY: Generating image with APIFree.ai using ThumbnailSpec prompt")
                     image_data = apifree_client.generate_image(prompt, width=1280, height=720, num_inference_steps=8)
                     if image_data:
                         logger.info("✅ APIFree.ai image generated successfully with ThumbnailSpec")
+                    else:
+                        logger.warning("❌ APIFree.ai ThumbnailSpec generation failed, trying fallback")
+                else:
+                    logger.warning("APIFree.ai not configured")
             else:
-                logger.warning("ThumbnailSpec validation failed, falling back to old method")
+                logger.warning("ThumbnailSpec validation failed")
+        else:
+            logger.warning("No valid ThumbnailSpec provided by Claude")
         
-        # Fallback to old method if ThumbnailSpec not available or failed
+        # FALLBACK 1: Try generic APIFree method if ThumbnailSpec failed
         if not image_data and apifree_client.enabled:
-            logger.info(f"Fallback: Generating {article_type} image with old method")
+            logger.info("🎨 FALLBACK 1: Generating image with APIFree.ai generic method")
             image_data = apifree_client.generate_sports_image(seo_article['title'], article_type)
             if image_data:
-                logger.info("APIFree.ai image generated successfully (fallback)")
+                logger.info("✅ APIFree.ai image generated successfully (generic fallback)")
+            else:
+                logger.warning("❌ APIFree.ai generic generation failed")
         
-        # Fallback to Cloudflare if APIFree fails
+        # FALLBACK 2: Try Cloudflare if APIFree unavailable
         if not image_data and cf_client.enabled:
-            logger.info("APIFree.ai unavailable, using Cloudflare Flux fallback")
+            logger.info("🎨 FALLBACK 2: Using Cloudflare Flux")
             image_data = cf_client.generate_image(seo_article['title'])
             if image_data:
-                logger.info("Cloudflare Flux image generated successfully")
+                logger.info("✅ Cloudflare Flux image generated successfully")
+            else:
+                logger.warning("❌ Cloudflare Flux generation failed")
         
-        # Last resort: Extract from source (if allowed - COPYRIGHT RISK)
+        # FALLBACK 3: Extract from source (COPYRIGHT RISK)
         if not image_data and ALLOW_SOURCE_IMAGES:
-            logger.warning("All AI generators unavailable, extracting from source (COPYRIGHT RISK)")
+            logger.warning("🎨 FALLBACK 3: Extracting from source (COPYRIGHT RISK)")
             image_data = extract_image_from_url(article['link'])
-        elif not image_data:
-            logger.warning("No image generated - all generators unavailable")
+            if image_data:
+                logger.info("✅ Extracted image from source")
+        
+        if not image_data:
+            logger.warning("⚠️ No image generated - all methods failed")
         
         # Optimize and upload image with SEO-friendly filename
         if image_data:
