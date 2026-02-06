@@ -3,6 +3,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from utils import logger, validate_env
 from PIL import Image
 import pillow_avif
+import json
 
 class SerperClient:
     def __init__(self):
