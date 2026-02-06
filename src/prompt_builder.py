@@ -24,37 +24,29 @@ class PromptBuilder:
     def build_lineup_5_prompt(spec: Dict) -> str:
         """
         Build lineup_5_figures template prompt.
-        Best for: Basketball, football, cricket matchups with two teams
+        Uses EXACT template from Image_Guide.md
         """
         
-        # Step 1: Format & Purpose
-        format_section = "16:9 sports news thumbnail poster, dark gray gradient background, studio lighting, clean floor shadow."
+        # EXACT template from Image_Guide.md
+        template = """16:9 sports news thumbnail poster, dark gray gradient background, studio lighting, clean floor shadow. Five generic 3D action-figure style adult {SPORT} players standing full body, front-facing, evenly spaced in one row. Two players on the left wear plain {LEFT_COLORS} uniforms, two players on the right wear plain {RIGHT_COLORS} uniforms, the center figure wears a plain light gray tracksuit. Uniforms must be completely blank: no team logos, no brand logos, no swoosh, no emblems, no patches. Add a top banner: red rectangle with white bold all-caps text exactly "{HEADLINE}". Add two label boxes below the banner: left white rectangle with black bold text exactly "{LEFT_LABEL}", right white rectangle with black bold text exactly "{RIGHT_LABEL}". Modern bold sans-serif font, perfectly sharp, perfectly spelled, aligned and centered. Absolutely no other readable text anywhere, no watermark, no random letters, no numbers."""
         
-        # Step 2: Subject Layout
-        sport = spec.get("topic", "sports").lower()
-        subject_section = f"Five generic 3D action-figure style adult {sport} players standing full body, front-facing, evenly spaced in one row."
-        
-        # Step 3: Team Coding
+        # Extract values from spec
+        sport = spec.get("topic", "cricket").lower().split()[0]  # Get first word (e.g., "cricket" from "cricket matchup")
         left_color = spec.get("team_left_color", "blue and white")
         right_color = spec.get("team_right_color", "red and white")
-        team_section = f"Two players on the left wear plain {left_color} uniforms, two players on the right wear plain {right_color} uniforms, the center figure wears a plain light gray tracksuit."
+        headline = spec.get("headline_text", "TEAM A vs TEAM B").upper()
+        left_label = f"{headline.split('vs')[0].strip()} (HOME)" if "vs" in headline else "TEAM A (HOME)"
+        right_label = f"{headline.split('vs')[1].strip()} (AWAY)" if "vs" in headline else "TEAM B (AWAY)"
         
-        # Step 4: Text Blocks
-        headline = spec.get("headline_text", "TEAM A vs TEAM B")
-        subhead = spec.get("sub_text", "")
-        
-        # Main headline banner
-        text_section = f'Add a top banner: red rectangle with white bold all-caps text exactly "{headline}".'
-        
-        # Add subheading if present
-        if subhead:
-            text_section += f' Add a subheading below the banner with white bold text exactly "{subhead}".'
-        
-        # Step 5: Hard Constraints
-        constraints = "Uniforms must be completely blank: no team logos, no brand logos, no swoosh, no emblems, no patches. Modern bold sans-serif font, perfectly sharp, perfectly spelled, aligned and centered. Absolutely no other readable text anywhere, no watermark, no random letters, no numbers."
-        
-        # Combine all sections
-        prompt = f"{format_section} {subject_section} {team_section} {text_section} {constraints}"
+        # Fill template
+        prompt = template.format(
+            SPORT=sport,
+            LEFT_COLORS=left_color,
+            RIGHT_COLORS=right_color,
+            HEADLINE=headline,
+            LEFT_LABEL=left_label,
+            RIGHT_LABEL=right_label
+        )
         
         return prompt
     
@@ -62,34 +54,27 @@ class PromptBuilder:
     def build_symbolic_prompt(spec: Dict) -> str:
         """
         Build symbolic template prompt.
-        Best for: Breaking news, boycotts, controversies, rule changes
+        Uses EXACT template from Image_Guide.md
         """
         
-        # Step 1: Format & Purpose
-        format_section = "16:9 breaking news poster, cinematic editorial still-life."
+        # EXACT template from Image_Guide.md
+        template = """16:9 breaking news poster, cinematic editorial still-life. A {SPORT} stadium at night under floodlights, empty pitch or court, clean composition with dramatic lighting. In the foreground, two plain {SPORT} equipment items placed apart: one solid {LEFT_COLORS}, one solid {RIGHT_COLORS}, both completely blank with no flags, no logos, no emblems. Equipment should be: for cricket use helmets, for basketball use jerseys on hangers, for football use boots. Add a top banner with bold sans-serif text exactly "{HEADLINE}". Add a smaller subheadline below exactly "{SUBHEAD}". Perfectly sharp, perfectly spelled, high contrast, centered, no distortion. Absolutely no other readable text anywhere, no watermark, no random letters, no numbers."""
         
-        # Step 2: Subject Layout
-        sport = spec.get("topic", "sports").lower()
-        subject_section = f"A {sport} stadium at night under floodlights, empty pitch or court, clean composition with dramatic lighting."
-        
-        # Step 3: Team Coding (equipment instead of players)
+        # Extract values from spec
+        sport = spec.get("topic", "cricket").lower().split()[0]
         left_color = spec.get("team_left_color", "blue and white")
         right_color = spec.get("team_right_color", "red and white")
-        team_section = f"In the foreground, two plain {sport} equipment items placed apart: one solid {left_color}, one solid {right_color}, both completely blank with no flags, no logos, no emblems."
+        headline = spec.get("headline_text", "BREAKING NEWS").upper()
+        subhead = spec.get("sub_text", "").upper()
         
-        # Step 4: Text Blocks
-        headline = spec.get("headline_text", "BREAKING NEWS")
-        subhead = spec.get("sub_text", "")
-        
-        text_section = f'Add a top banner with bold sans-serif text exactly "{headline}".'
-        if subhead:
-            text_section += f' Add a smaller subheadline below exactly "{subhead}".'
-        
-        # Step 5: Hard Constraints
-        constraints = "Perfectly sharp, perfectly spelled, high contrast, centered, no distortion. Absolutely no other readable text anywhere, no watermark, no random letters, no numbers."
-        
-        # Combine all sections
-        prompt = f"{format_section} {subject_section} {team_section} {text_section} {constraints}"
+        # Fill template
+        prompt = template.format(
+            SPORT=sport,
+            LEFT_COLORS=left_color,
+            RIGHT_COLORS=right_color,
+            HEADLINE=headline,
+            SUBHEAD=subhead
+        )
         
         return prompt
     
@@ -97,30 +82,27 @@ class PromptBuilder:
     def build_action_moment_prompt(spec: Dict) -> str:
         """
         Build action_moment template prompt.
-        Best for: Single-player stories, injury updates, record-breaking performances
+        Uses EXACT template from Image_Guide.md
         """
         
-        # Step 1: Format & Purpose
-        format_section = "16:9 sports news thumbnail, cinematic action photography."
+        # EXACT template from Image_Guide.md
+        template = """16:9 sports news thumbnail, cinematic action photography. A generic adult {SPORT} athlete in a plain {TEAM_COLOR} uniform performing {ACTION}, dynamic motion, frozen action, dramatic {VENUE} lighting, shallow depth of field, realistic proportions. Uniform must be completely blank: no logos, no brand marks, no swoosh. Face is generic and non-identifiable. Add bold headline text at the top in modern sans-serif, perfectly spelled: "{HEADLINE}". Large empty space on the right side for additional text overlay. Absolutely no other readable text, no watermark, no extra letters, correct anatomy, sharp focus."""
         
-        # Step 2: Subject Layout
-        sport = spec.get("topic", "sports").lower()
-        subject_section = f"A generic adult {sport} athlete in a plain uniform performing dynamic action, frozen action moment, dramatic stadium lighting, shallow depth of field, realistic proportions."
-        
-        # Step 3: Team Coding (single team color)
+        # Extract values from spec
+        sport = spec.get("topic", "cricket").lower().split()[0]
         team_color = spec.get("team_left_color", "blue and white")
-        team_section = f"Uniform must be plain {team_color}, completely blank: no logos, no brand marks, no swoosh. Face is generic and non-identifiable."
+        headline = spec.get("headline_text", "BREAKING MOMENT").upper()
+        action = "in action"  # Default action
+        venue = "stadium"  # Default venue
         
-        # Step 4: Text Blocks
-        headline = spec.get("headline_text", "BREAKING MOMENT")
-        
-        text_section = f'Add bold headline text at the top in modern sans-serif, perfectly spelled: "{headline}". Large empty space on the right side for additional text overlay.'
-        
-        # Step 5: Hard Constraints
-        constraints = "Absolutely no other readable text, no watermark, no extra letters, correct anatomy, sharp focus."
-        
-        # Combine all sections
-        prompt = f"{format_section} {subject_section} {team_section} {text_section} {constraints}"
+        # Fill template
+        prompt = template.format(
+            SPORT=sport,
+            TEAM_COLOR=team_color,
+            ACTION=action,
+            VENUE=venue,
+            HEADLINE=headline
+        )
         
         return prompt
     
