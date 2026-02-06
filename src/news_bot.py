@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys, time, feedparser, requests, re
+import os, sys, time, feedparser, requests, re, json
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from tenacity import RetryError
@@ -524,6 +524,22 @@ TITLE: [Your 50-60 char title - MUST accurately reflect story]
 
 META: [Your 150-160 char meta description]
 
+THUMBNAILSPEC:
+{
+  "topic": "[NCAAB/Cricket/Football/etc matchup/news type]",
+  "headline_text": "[Article headline, max 40 chars, UPPERCASE]",
+  "sub_text": "[Subheading like BETTING INSIGHTS, max 30 chars]",
+  "layout": "[lineup_5_figures|symbolic|action_moment]",
+  "aspect_ratio": "16:9",
+  "team_left_color": "[color description, e.g. royal blue and white]",
+  "team_right_color": "[color description, e.g. deep red and white]",
+  "no_real_people": true,
+  "no_team_logos": true,
+  "style": "[3D action-figure poster|cinematic editorial|action photography]",
+  "background": "[dark gradient studio|stadium night floodlights|etc]",
+  "negative_space": "[top for headline|sides for text|etc]"
+}
+
 CONTENT:
 [Your complete HTML article starting with publish date, then opening paragraph]
 
@@ -550,26 +566,58 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
     or_client = OpenRouterClient()
     response = or_client.generate(prompt, max_tokens=5000)
     
-    # Parse response - remove formatting labels
+    # Parse response - extract TITLE, META, THUMBNAILSPEC, and CONTENT
     lines = response.split('\n')
     new_title = title
     meta_desc = ""
+    thumbnail_spec = {}
     html_content = response
     
-    for i, line in enumerate(lines):
-        # Handle both "TITLE:" and "**TITLE:**" formats
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         line_stripped = line.strip()
+        
+        # Extract TITLE
         if line_stripped.startswith('TITLE:') or line_stripped.startswith('**TITLE:'):
             new_title = re.sub(r'\*\*TITLE:\*\*|\*\*TITLE:|\bTITLE:\s*', '', line).strip()
-            # Remove any remaining asterisks
             new_title = new_title.replace('**', '').strip()
+        
+        # Extract META
         elif line_stripped.startswith('META:') or line_stripped.startswith('**META:'):
             meta_desc = re.sub(r'\*\*META:\*\*|\*\*META:|\bMETA:\s*', '', line).strip()
-            # Remove any remaining asterisks
             meta_desc = meta_desc.replace('**', '').strip()
+        
+        # Extract THUMBNAILSPEC (JSON block)
+        elif line_stripped.startswith('THUMBNAILSPEC:') or line_stripped.startswith('**THUMBNAILSPEC:'):
+            # Find the JSON block
+            json_start = i + 1
+            json_lines = []
+            brace_count = 0
+            
+            for j in range(json_start, len(lines)):
+                json_line = lines[j]
+                json_lines.append(json_line)
+                brace_count += json_line.count('{') - json_line.count('}')
+                
+                if brace_count == 0 and '{' in '\n'.join(json_lines):
+                    # JSON block complete
+                    try:
+                        json_str = '\n'.join(json_lines)
+                        thumbnail_spec = json.loads(json_str)
+                        logger.info(f"Extracted ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse ThumbnailSpec JSON: {e}")
+                    
+                    i = j
+                    break
+        
+        # Extract CONTENT
         elif line_stripped.startswith('CONTENT:') or line_stripped.startswith('**CONTENT:'):
             html_content = '\n'.join(lines[i+1:])
             break
+        
+        i += 1
     
     # Remove any remaining markdown formatting from content
     html_content = re.sub(r'\*\*CONTENT:\*\*', '', html_content)
@@ -588,7 +636,8 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
     return {
         'title': new_title,
         'content': sanitize_html(html_content),
-        'meta': meta_desc
+        'meta': meta_desc,
+        'thumbnail_spec': thumbnail_spec
     }
 
 def add_analytics_tracking(content, post_url):
