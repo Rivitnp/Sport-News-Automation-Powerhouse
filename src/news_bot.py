@@ -568,6 +568,9 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
     or_client = OpenRouterClient()
     response = or_client.generate(prompt, max_tokens=5000)
     
+    # Log the raw response for debugging
+    logger.debug(f"Claude response (first 500 chars): {response[:500]}")
+    
     # Parse response - extract TITLE, META, THUMBNAILSPEC, and CONTENT
     lines = response.split('\n')
     new_title = title
@@ -607,9 +610,10 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
                     try:
                         json_str = '\n'.join(json_lines)
                         thumbnail_spec = json.loads(json_str)
-                        logger.info(f"Extracted ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
+                        logger.info(f"✅ Extracted ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
                     except json.JSONDecodeError as e:
                         logger.warning(f"Failed to parse ThumbnailSpec JSON: {e}")
+                        logger.warning(f"JSON string: {json_str[:200]}")
                     
                     i = j
                     break
@@ -618,6 +622,8 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
         elif line_stripped.startswith('CONTENT:') or line_stripped.startswith('**CONTENT:'):
             html_content = '\n'.join(lines[i+1:])
             break
+
+        i += 1
         
         i += 1
     
@@ -626,6 +632,25 @@ CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
     html_content = re.sub(r'\*\*Title:\*\*.*?\n', '', html_content)
     html_content = re.sub(r'\*\*Meta:\*\*.*?\n', '', html_content)
     html_content = html_content.strip()
+    
+    # If Claude didn't provide ThumbnailSpec, generate a basic one
+    if not thumbnail_spec:
+        logger.warning("Claude didn't provide ThumbnailSpec, generating basic one")
+        thumbnail_spec = {
+            "topic": "sports news",
+            "headline_text": new_title[:40].upper(),
+            "sub_text": "SPORTS NEWS",
+            "layout": "lineup_5_figures",
+            "aspect_ratio": "16:9",
+            "team_left_color": "blue and white",
+            "team_right_color": "red and white",
+            "no_real_people": True,
+            "no_team_logos": True,
+            "style": "3D action-figure poster",
+            "background": "dark gradient studio",
+            "negative_space": "top for headline"
+        }
+        logger.info(f"Generated fallback ThumbnailSpec")
     
     # Ensure betting disclaimer is present if betting context detected
     if betting_context and BETTING_BRAND not in html_content:
