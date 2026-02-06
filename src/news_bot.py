@@ -520,28 +520,28 @@ CLOSING:
 OUTPUT FORMAT:
 Return your response in this exact format:
 
-TITLE: [Your 50-60 char title - MUST accurately reflect story]
+TITLE: Your 50-60 char title - MUST accurately reflect story
 
-META: [Your 150-160 char meta description]
+META: Your 150-160 char meta description
 
 THUMBNAILSPEC:
 {{
-  "topic": "[NCAAB/Cricket/Football/etc matchup/news type]",
-  "headline_text": "[Article headline, max 40 chars, UPPERCASE]",
-  "sub_text": "[Subheading like BETTING INSIGHTS, max 30 chars]",
-  "layout": "[lineup_5_figures|symbolic|action_moment]",
+  "topic": "NCAAB/Cricket/Football matchup or news type",
+  "headline_text": "Article headline, max 40 chars, UPPERCASE",
+  "sub_text": "Subheading like BETTING INSIGHTS, max 30 chars",
+  "layout": "lineup_5_figures or symbolic or action_moment",
   "aspect_ratio": "16:9",
-  "team_left_color": "[color description, e.g. royal blue and white]",
-  "team_right_color": "[color description, e.g. deep red and white]",
+  "team_left_color": "color description, e.g. royal blue and white",
+  "team_right_color": "color description, e.g. deep red and white",
   "no_real_people": true,
   "no_team_logos": true,
-  "style": "[3D action-figure poster|cinematic editorial|action photography]",
-  "background": "[dark gradient studio|stadium night floodlights|etc]",
-  "negative_space": "[top for headline|sides for text|etc]"
+  "style": "3D action-figure poster or cinematic editorial or action photography",
+  "background": "dark gradient studio or stadium night floodlights or etc",
+  "negative_space": "top for headline or sides for text or etc"
 }}
 
 CONTENT:
-[Your complete HTML article starting with publish date, then opening paragraph]
+Your complete HTML article starting with publish date, then opening paragraph
 
 CRITICAL RULES - VIOLATION WILL RESULT IN REJECTION:
 - MINIMUM 800 words (strict requirement)
