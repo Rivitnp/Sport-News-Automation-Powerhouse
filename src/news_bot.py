@@ -525,7 +525,7 @@ TITLE: [Your 50-60 char title - MUST accurately reflect story]
 META: [Your 150-160 char meta description]
 
 THUMBNAILSPEC:
-{
+{{
   "topic": "[NCAAB/Cricket/Football/etc matchup/news type]",
   "headline_text": "[Article headline, max 40 chars, UPPERCASE]",
   "sub_text": "[Subheading like BETTING INSIGHTS, max 30 chars]",
@@ -538,7 +538,7 @@ THUMBNAILSPEC:
   "style": "[3D action-figure poster|cinematic editorial|action photography]",
   "background": "[dark gradient studio|stadium night floodlights|etc]",
   "negative_space": "[top for headline|sides for text|etc]"
-}
+}}
 
 CONTENT:
 [Your complete HTML article starting with publish date, then opening paragraph]
