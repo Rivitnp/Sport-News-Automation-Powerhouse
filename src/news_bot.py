@@ -7,6 +7,8 @@ from utils import logger, validate_env, init_database, is_duplicate, mark_proces
 from api_clients import SerperClient, OpenRouterClient, CloudflareClient, WordPressClient, optimize_image
 from apifree_client import APIFreeClient
 from article_extractor import extract_article
+from thumbnail_spec import ThumbnailSpecBuilder
+from prompt_builder import PromptBuilder
 from config import (RSS_FEEDS, MAX_ARTICLES_PER_RUN, ARTICLE_DELAY_SECONDS, LOCAL_KEYWORDS,
                     PRIORITY_SPORTS, BETTING_TRIGGERS, BETTING_BRAND, BETTING_DISCLAIMER,
                     ALLOW_SOURCE_IMAGES)
@@ -727,19 +729,37 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
         
         logger.info(f"Article type detected: {article_type}")
         
-        # Image generation with fallback strategy:
-        # 1. Try APIFree.ai (fast, cheap, high quality)
-        # 2. Fallback to Cloudflare Flux (free backup)
-        # 3. Fallback to source image (if allowed - COPYRIGHT RISK)
+        # NEW PIPELINE: Use ThumbnailSpec + PromptBuilder for perfect image generation
         image_data = None
         media_id = None
         
-        # Try APIFree.ai first (primary)
-        if apifree_client.enabled:
-            logger.info(f"Generating {article_type} image with APIFree.ai Z Image Turbo")
+        # Extract ThumbnailSpec from seo_article (Claude generated it)
+        thumbnail_spec = seo_article.get('thumbnail_spec', {})
+        
+        if thumbnail_spec:
+            logger.info(f"Using ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
+            
+            # Validate spec
+            if PromptBuilder.validate_spec(thumbnail_spec):
+                # Build Z-Image Turbo prompt from ThumbnailSpec
+                prompt = PromptBuilder.build_prompt(thumbnail_spec)
+                logger.info(f"Built prompt ({len(prompt)} chars) for {thumbnail_spec.get('layout', 'unknown')} layout")
+                
+                # Generate image with APIFree.ai
+                if apifree_client.enabled:
+                    logger.info("Generating image with APIFree.ai using ThumbnailSpec prompt")
+                    image_data = apifree_client.generate_image(prompt, width=1280, height=720, num_inference_steps=8)
+                    if image_data:
+                        logger.info("✅ APIFree.ai image generated successfully with ThumbnailSpec")
+            else:
+                logger.warning("ThumbnailSpec validation failed, falling back to old method")
+        
+        # Fallback to old method if ThumbnailSpec not available or failed
+        if not image_data and apifree_client.enabled:
+            logger.info(f"Fallback: Generating {article_type} image with old method")
             image_data = apifree_client.generate_sports_image(seo_article['title'], article_type)
             if image_data:
-                logger.info("APIFree.ai image generated successfully")
+                logger.info("APIFree.ai image generated successfully (fallback)")
         
         # Fallback to Cloudflare if APIFree fails
         if not image_data and cf_client.enabled:
