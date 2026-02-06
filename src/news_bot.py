@@ -28,30 +28,36 @@ def calculate_article_priority(title, summary):
     text = f"{title} {summary}".lower()
     score = 0
     
-    # Check sport priority (Cricket: +5, Football: +3, Other: +2)
+    # BALANCED PRIORITY: Cricket and Football equally weighted
     sport_found = False
-    for sport, priority in PRIORITY_SPORTS.items():
-        if sport in text:
-            score += priority
-            sport_found = True
-            break
     
-    # If no specific sport found, check for general sports indicators
+    # Check for cricket
+    cricket_keywords = ['cricket', 'ipl', 't20', 'test', 'odi', 'wicket', 'batting', 'bowling', 'bbl', 'psl']
+    cricket_teams = ['india', 'pakistan', 'australia', 'england', 'south africa', 'new zealand', 'sri lanka', 'west indies', 'bangladesh', 'afghanistan']
+    
+    if any(kw in text for kw in cricket_keywords) or any(team in text for team in cricket_teams):
+        score += 5  # Cricket: +5
+        sport_found = True
+    
+    # Check for football
+    football_keywords = ['football', 'soccer', 'premier league', 'champions league', 'ucl', 'goal', 'fifa', 'uefa']
+    football_teams = ['arsenal', 'chelsea', 'manchester', 'liverpool', 'barcelona', 'real madrid', 'psg', 'bayern', 'juventus', 'milan', 'tottenham', 'aston villa', 'newcastle']
+    football_leagues = ['premier league', 'la liga', 'serie a', 'bundesliga', 'ligue 1']
+    
+    if any(kw in text for kw in football_keywords) or any(team in text for team in football_teams) or any(league in text for league in football_leagues):
+        score += 5  # Football: +5 (EQUAL to cricket now)
+        sport_found = True
+    
+    # Check for other sports
     if not sport_found:
-        # Football team names and leagues
-        football_indicators = ['arsenal', 'chelsea', 'manchester', 'liverpool', 'barcelona', 
-                              'real madrid', 'psg', 'bayern', 'juventus', 'milan',
-                              'premier league', 'la liga', 'serie a', 'bundesliga', 'ligue 1']
-        if any(indicator in text for indicator in football_indicators):
-            score += 3  # Football priority
+        other_sports = ['basketball', 'nba', 'ncaa', 'ufc', 'mma', 'boxing', 'f1', 'formula', 'racing', 'tennis', 'golf']
+        if any(sport in text for sport in other_sports):
+            score += 3  # Other sports: +3
             sport_found = True
-        
-        # Cricket team names and tournaments
-        cricket_indicators = ['india', 'pakistan', 'australia', 'england', 'test match',
-                            'odi', 't20', 'ipl', 'bbl', 'psl', 'wicket', 'batting', 'bowling']
-        if any(indicator in text for indicator in cricket_indicators):
-            score += 5  # Cricket priority
-            sport_found = True
+    
+    # If no sport found, still accept it but with lower priority
+    if not sport_found:
+        score += 1  # Generic sports: +1
     
     # Boost for betting-relevant content
     for trigger in BETTING_TRIGGERS:
@@ -59,9 +65,11 @@ def calculate_article_priority(title, summary):
             score += 2
             break
     
-    # Boost for Nepal/India mentions
-    if 'nepal' in text or 'india' in text:
-        score += 5
+    # Boost for Nepal/India mentions (but only +2, not +5)
+    if 'nepal' in text:
+        score += 2
+    if 'india' in text:
+        score += 1  # Reduced from +5 to +1 to avoid cricket bias
     
     return score
 
