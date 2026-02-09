@@ -189,12 +189,12 @@ class WordPressClient:
         logger.info(f"Uploaded media ID: {media_id}")
         return media_id
 
-    def create_post(self, title, content, featured_media=None, categories=None, tags=None, date=None):
+    def create_post(self, title, content, featured_media=None, categories=None, tags=None, date=None, status='draft'):
         """Create WordPress post with categories, tags, and date"""
         data = {
             'title': title,
             'content': content,
-            'status': 'publish',
+            'status': status,  # 'draft' or 'publish'
             'categories': categories or [],
             'tags': tags or []
         }
@@ -206,6 +206,7 @@ class WordPressClient:
         try:
             logger.info(f"Posting to: {self.url}/wp-json/wp/v2/posts")
             logger.info(f"Using auth: {self.username}")
+            logger.info(f"Status: {status}")
             
             resp = self.session.post(f"{self.url}/wp-json/wp/v2/posts", json=data, timeout=30)
             
@@ -228,7 +229,7 @@ class WordPressClient:
             
             post_id = resp.json()['id']
             post_url = resp.json()['link']
-            logger.info(f"✅ Created post ID: {post_id} at {post_url}")
+            logger.info(f"✅ Created post ID: {post_id} (status: {status}) at {post_url}")
             return post_id, post_url
         except Exception as e:
             logger.error(f"❌ WordPress error: {type(e).__name__}: {e}")

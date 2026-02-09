@@ -4,8 +4,7 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from tenacity import RetryError
 from utils import logger, validate_env, init_database, is_duplicate, mark_processed, sanitize_html
-from api_clients import SerperClient, OpenRouterClient, CloudflareClient, WordPressClient, optimize_image
-from apifree_client import APIFreeClient
+from api_clients import SerperClient, OpenRouterClient, WordPressClient, optimize_image
 from article_extractor import extract_article
 from thumbnail_spec import ThumbnailSpecBuilder
 from prompt_builder import PromptBuilder
@@ -709,8 +708,8 @@ def add_analytics_tracking(content, post_url):
     
     return analytics_code + content
 
-def process_article(article, serper, apifree_client, cf_client, wp_client):
-    """Process single article: scrape, rewrite, publish with betting focus"""
+def process_article(article, serper, wp_client):
+    """Process single article: scrape, rewrite, publish to WordPress DRAFT (no image)"""
     try:
         logger.info(f"Processing (Priority {article['priority']}): {article['title']}")
         
@@ -758,84 +757,8 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
         
         logger.info(f"Article type detected: {article_type}")
         
-        # NEW PIPELINE: Use ThumbnailSpec + PromptBuilder for perfect image generation
-        image_data = None
-        media_id = None
-        
-        # Extract ThumbnailSpec from seo_article (Claude generated it)
-        thumbnail_spec = seo_article.get('thumbnail_spec', {})
-        
-        if thumbnail_spec and thumbnail_spec.get('topic'):
-            logger.info(f"Using ThumbnailSpec: {thumbnail_spec.get('topic', 'unknown')}")
-            
-            # Validate spec
-            if PromptBuilder.validate_spec(thumbnail_spec):
-                # Build Z-Image Turbo prompt from ThumbnailSpec
-                prompt = PromptBuilder.build_prompt(thumbnail_spec)
-                logger.info(f"Built prompt ({len(prompt)} chars) for {thumbnail_spec.get('layout', 'unknown')} layout")
-                
-                # Generate image with APIFree.ai (PRIMARY METHOD)
-                if apifree_client.enabled:
-                    logger.info("🎨 PRIMARY: Generating image with APIFree.ai using ThumbnailSpec prompt")
-                    image_data = apifree_client.generate_image(prompt, width=1280, height=720, num_inference_steps=8)
-                    if image_data:
-                        logger.info("✅ APIFree.ai image generated successfully with ThumbnailSpec")
-                    else:
-                        logger.warning("❌ APIFree.ai ThumbnailSpec generation failed, trying fallback")
-                else:
-                    logger.warning("APIFree.ai not configured")
-            else:
-                logger.warning("ThumbnailSpec validation failed")
-        else:
-            logger.warning("No valid ThumbnailSpec provided by Claude")
-        
-        # FALLBACK 1: Try generic APIFree method if ThumbnailSpec failed
-        if not image_data and apifree_client.enabled:
-            logger.info("🎨 FALLBACK 1: Generating image with APIFree.ai generic method")
-            image_data = apifree_client.generate_sports_image(seo_article['title'], article_type)
-            if image_data:
-                logger.info("✅ APIFree.ai image generated successfully (generic fallback)")
-            else:
-                logger.warning("❌ APIFree.ai generic generation failed")
-        
-        # FALLBACK 2: Try Cloudflare if APIFree unavailable
-        if not image_data and cf_client.enabled:
-            logger.info("🎨 FALLBACK 2: Using Cloudflare Flux")
-            image_data = cf_client.generate_image(seo_article['title'])
-            if image_data:
-                logger.info("✅ Cloudflare Flux image generated successfully")
-            else:
-                logger.warning("❌ Cloudflare Flux generation failed")
-        
-        # FALLBACK 3: Extract from source (COPYRIGHT RISK)
-        if not image_data and ALLOW_SOURCE_IMAGES:
-            logger.warning("🎨 FALLBACK 3: Extracting from source (COPYRIGHT RISK)")
-            image_data = extract_image_from_url(article['link'])
-            if image_data:
-                logger.info("✅ Extracted image from source")
-        
-        if not image_data:
-            logger.warning("⚠️ No image generated - all methods failed")
-        
-        # Optimize and upload image with SEO-friendly filename
-        if image_data:
-            optimized = optimize_image(image_data)
-            if optimized:
-                # Generate SEO-friendly filename from title
-                # Convert title to lowercase, replace spaces with hyphens, remove special chars
-                import re
-                seo_filename = re.sub(r'[^a-z0-9-]', '', seo_article['title'].lower().replace(' ', '-').replace('--', '-'))
-                seo_filename = seo_filename[:50]  # Limit length
-                seo_filename = f"{seo_filename}.avif"
-                
-                try:
-                    media_id = wp_client.upload_media(optimized, seo_filename)
-                    logger.info(f"Uploaded featured image: {seo_filename}")
-                except Exception as e:
-                    logger.warning(f"Failed to upload image: {e}")
-                    media_id = None
-        else:
-            logger.warning("Publishing article without image")
+        # NO IMAGE GENERATION - Focus on article quality only
+        logger.info("📝 Skipping image generation - article will be posted to draft for manual image addition")
         
         # Add analytics tracking
         final_content = add_analytics_tracking(seo_article['content'], seo_article['title'])
@@ -864,21 +787,22 @@ def process_article(article, serper, apifree_client, cf_client, wp_client):
         logger.info(f"Categories: {detected_categories} (IDs: {category_ids})")
         logger.info(f"Tags: {detected_tags} (IDs: {tag_ids})")
         
-        # Publish to WordPress
+        # Publish to WordPress as DRAFT (no featured image)
         try:
             post_id, post_url = wp_client.create_post(
                 title=seo_article['title'],
                 content=final_content,
-                featured_media=media_id,
+                featured_media=None,  # No image - will be added manually
                 categories=category_ids,
                 tags=tag_ids,
-                date=publish_date
+                date=publish_date,
+                status='draft'  # Post as draft, not published
             )
             
             # Mark as processed
             mark_processed(article['link'], seo_article['title'], post_id)
             
-            logger.info(f"Published with betting content: {post_url}")
+            logger.info(f"✅ Posted to WordPress DRAFT (no image): {post_url}")
             return True
         except RetryError as e:
             logger.error(f"WordPress API failed after retries: {e}")
@@ -904,11 +828,9 @@ def main():
         
         # Initialize clients
         serper = SerperClient()
-        apifree_client = APIFreeClient()  # Primary image generator
-        cf_client = CloudflareClient()    # Fallback image generator
         wp_client = WordPressClient()
         
-        logger.info("Starting Nepal Sports News Bot")
+        logger.info("Starting Nepal Sports News Bot (Article Generation Only - No Images)")
         
         # Fetch articles from RSS
         articles = fetch_rss_articles()
@@ -921,7 +843,7 @@ def main():
         # Process articles
         success_count = 0
         for article in articles:
-            if process_article(article, serper, apifree_client, cf_client, wp_client):
+            if process_article(article, serper, wp_client):
                 success_count += 1
                 time.sleep(ARTICLE_DELAY_SECONDS)  # Rate limiting
         
